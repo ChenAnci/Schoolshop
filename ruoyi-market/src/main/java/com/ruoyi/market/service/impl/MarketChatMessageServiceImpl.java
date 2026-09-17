@@ -1,11 +1,10 @@
 package com.ruoyi.market.service.impl;
 
+import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ruoyi.market.domain.MarketChatMessage;
 import com.ruoyi.market.mapper.MarketChatMessageMapper;
 import com.ruoyi.market.service.IMarketChatMessageService;
@@ -35,13 +34,13 @@ public class MarketChatMessageServiceImpl implements IMarketChatMessageService
     }
 
     @Override
-    public IPage<MarketChatMessage> pageMessages(Long sessionId, long pageNum, long pageSize)
+    public List<MarketChatMessage> pageMessages(Long sessionId, long pageNum, long pageSize)
     {
+        // 配合 RuoYi startPage()/PageHelper 分页，直接返回列表
         LambdaQueryWrapper<MarketChatMessage> qw = new LambdaQueryWrapper<>();
         qw.eq(MarketChatMessage::getSessionId, sessionId)
           .orderByDesc(MarketChatMessage::getMessageId);
-        Page<MarketChatMessage> page = new Page<>(pageNum, pageSize);
-        return messageMapper.selectPage(page, qw);
+        return messageMapper.selectList(qw);
     }
 
     @Override

@@ -10,7 +10,6 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.page.TableDataInfo;
@@ -93,9 +92,9 @@ public class MarketChatController extends BaseController
             return getDataTable(List.of());
         }
         startPage();
-        IPage<MarketChatMessage> page = chatMessageService.pageMessages(sessionId,
+        List<MarketChatMessage> list = chatMessageService.pageMessages(sessionId,
                 pageNum == null ? 1 : pageNum, pageSize == null ? 20 : pageSize);
-        return getDataTable(page.getRecords());
+        return getDataTable(list);
     }
 
     /** 标记会话消息已读 */
@@ -144,8 +143,8 @@ public class MarketChatController extends BaseController
     public TableDataInfo adminMessages(Long sessionId, Long pageNum, Long pageSize)
     {
         startPage();
-        IPage<MarketChatMessage> page = chatMessageService.pageMessages(sessionId,
+        List<MarketChatMessage> list = chatMessageService.pageMessages(sessionId,
                 pageNum == null ? 1 : pageNum, pageSize == null ? 20 : pageSize);
-        return getDataTable(page.getRecords());
+        return getDataTable(list);
     }
 }
