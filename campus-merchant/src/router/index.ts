@@ -74,6 +74,19 @@ export const routes: RouteRecordRaw[] = [
     ]
   },
   {
+    path: '/chat',
+    component: Layout,
+    meta: { title: '消息中心', icon: 'ChatDotRound', hidden: true },
+    children: [
+      {
+        path: '',
+        name: 'Chat',
+        component: () => import('@/views/chat/index.vue'),
+        meta: { title: '消息中心', requiresAuth: true }
+      }
+    ]
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
     component: () => import('@/views/error/404.vue'),
