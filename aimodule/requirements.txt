@@ -1,0 +1,12 @@
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+# LangChain + LangGraph（骨架本期仅用于编排 SQL 分析工作流，不接真实大模型）
+langchain>=0.2.0
+langchain-core>=0.2.0
+langgraph>=0.2.0
+# 只读数据库访问
+sqlalchemy>=2.0.0
+pymysql>=1.1.0
+python-dotenv>=1.0.0

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.market.mapper.MarketShopMapper">
+
+    <resultMap type="com.ruoyi.market.domain.MarketShop" id="MarketShopResult">
+        <id     property="shopId"       column="shop_id"       />
+        <result property="userId"       column="user_id"       />
+        <result property="shopName"     column="shop_name"     />
+        <result property="shopLogo"     column="shop_logo"     />
+        <result property="shopDesc"     column="shop_desc"     />
+        <result property="contactPhone" column="contact_phone" />
+        <result property="status"       column="status"        />
+        <result property="createBy"     column="create_by"     />
+        <result property="createTime"   column="create_time"   />
+        <result property="updateBy"     column="update_by"     />
+        <result property="updateTime"   column="update_time"   />
+        <result property="remark"       column="remark"        />
+        <result property="productCount" column="product_count" />
+    </resultMap>
+
+    <sql id="selectMarketShopVo">
+        select s.shop_id, s.user_id, s.shop_name, s.shop_logo, s.shop_desc, s.contact_phone, s.status,
+               s.create_by, s.create_time, s.update_by, s.update_time, s.remark,
+               (select count(1) from market_product p where p.shop_id = s.shop_id and p.status = '0') as product_count
+        from market_shop s
+    </sql>
+
+    <select id="selectShopList" parameterType="com.ruoyi.market.domain.MarketShop" resultMap="MarketShopResult">
+        <include refid="selectMarketShopVo"/>
+        <where>
+            <if test="shopName != null and shopName != ''"> and s.shop_name like concat('%', #{shopName}, '%')</if>
+            <if test="status != null and status != ''"> and s.status = #{status}</if>
+        </where>
+        order by s.create_time desc
+    </select>
+
+</mapper>

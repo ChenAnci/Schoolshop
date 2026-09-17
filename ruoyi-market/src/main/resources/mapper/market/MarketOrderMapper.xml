@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.market.mapper.MarketOrderMapper">
+
+    <resultMap type="com.ruoyi.market.domain.MarketOrder" id="MarketOrderResult">
+        <id     property="orderId"         column="order_id"         />
+        <result property="orderNo"         column="order_no"         />
+        <result property="userId"          column="user_id"          />
+        <result property="shopId"          column="shop_id"          />
+        <result property="totalAmount"     column="total_amount"     />
+        <result property="payAmount"       column="pay_amount"       />
+        <result property="status"          column="status"           />
+        <result property="auditFlag"       column="audit_flag"        />
+        <result property="auditRemark"     column="audit_remark"      />
+        <result property="receiverName"    column="receiver_name"    />
+        <result property="receiverPhone"   column="receiver_phone"   />
+        <result property="receiverAddress" column="receiver_address" />
+        <result property="payTime"         column="pay_time"         />
+        <result property="takeTime"        column="take_time"        />
+        <result property="finishTime"      column="finish_time"      />
+        <result property="cancelTime"      column="cancel_time"      />
+        <result property="createBy"        column="create_by"        />
+        <result property="createTime"      column="create_time"      />
+        <result property="updateBy"        column="update_by"        />
+        <result property="updateTime"      column="update_time"      />
+        <result property="remark"          column="remark"           />
+        <result property="userName"        column="user_name"        />
+        <result property="shopName"        column="shop_name"        />
+    </resultMap>
+
+    <sql id="selectMarketOrderVo">
+        select o.order_id, o.order_no, o.user_id, o.shop_id, o.total_amount, o.pay_amount,
+               o.status, o.audit_flag, o.audit_remark, o.receiver_name, o.receiver_phone, o.receiver_address,
+               o.pay_time, o.take_time, o.finish_time, o.cancel_time,
+               o.create_by, o.create_time, o.update_by, o.update_time, o.remark,
+               u.nick_name as user_name,
+               s.shop_name
+        from market_orders o
+        left join sys_user u on o.user_id = u.user_id
+        left join market_shop s on o.shop_id = s.shop_id
+    </sql>
+
+    <select id="selectOrderList" parameterType="com.ruoyi.market.domain.MarketOrder" resultMap="MarketOrderResult">
+        <include refid="selectMarketOrderVo"/>
+        <where>
+            <if test="orderNo != null and orderNo != ''"> and o.order_no = #{orderNo}</if>
+            <if test="userId != null"> and o.user_id = #{userId}</if>
+            <if test="shopId != null"> and o.shop_id = #{shopId}</if>
+            <if test="status != null and status != ''"> and o.status = #{status}</if>
+            <if test="auditFlag != null and auditFlag != ''"> and o.audit_flag = #{auditFlag}</if>
+            <if test="receiverName != null and receiverName != ''"> and o.receiver_name like concat('%', #{receiverName}, '%')</if>
+        </where>
+        order by o.create_time desc
+    </select>
+
+</mapper>

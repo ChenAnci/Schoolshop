@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.market.mapper.MarketOrderItemMapper">
+
+    <resultMap type="com.ruoyi.market.domain.MarketOrderItem" id="MarketOrderItemResult">
+        <id     property="itemId"       column="item_id"       />
+        <result property="orderId"      column="order_id"      />
+        <result property="orderNo"      column="order_no"      />
+        <result property="productId"    column="product_id"    />
+        <result property="productName"  column="product_name"  />
+        <result property="productImage" column="product_image" />
+        <result property="price"        column="price"         />
+        <result property="quantity"     column="quantity"      />
+        <result property="subtotal"     column="subtotal"      />
+        <result property="createTime"   column="create_time"   />
+    </resultMap>
+
+    <sql id="selectMarketOrderItemVo">
+        select item_id, order_id, order_no, product_id, product_name, product_image,
+               price, quantity, subtotal, create_time
+        from market_order_item
+    </sql>
+
+    <select id="selectOrderItemList" parameterType="com.ruoyi.market.domain.MarketOrderItem" resultMap="MarketOrderItemResult">
+        <include refid="selectMarketOrderItemVo"/>
+        <where>
+            <if test="orderId != null"> and order_id = #{orderId}</if>
+            <if test="orderNo != null and orderNo != ''"> and order_no = #{orderNo}</if>
+        </where>
+        order by item_id
+    </select>
+
+</mapper>

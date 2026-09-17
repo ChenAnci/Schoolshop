@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.market.mapper.MarketCartMapper">
+
+    <resultMap type="com.ruoyi.market.domain.MarketCart" id="MarketCartResult">
+        <id     property="cartId"       column="cart_id"       />
+        <result property="userId"       column="user_id"       />
+        <result property="productId"    column="product_id"    />
+        <result property="productName"  column="product_name"  />
+        <result property="productImage" column="product_image" />
+        <result property="price"        column="price"         />
+        <result property="quantity"     column="quantity"      />
+        <result property="checked"      column="checked"       />
+        <result property="createTime"   column="create_time"   />
+        <result property="updateTime"   column="update_time"   />
+        <result property="productStatus" column="product_status" />
+    </resultMap>
+
+    <sql id="selectMarketCartVo">
+        select c.cart_id, c.user_id, c.product_id, c.product_name, c.product_image,
+               c.price, c.quantity, c.checked, c.create_time, c.update_time,
+               p.status as product_status
+        from market_cart c
+        left join market_product p on c.product_id = p.product_id
+    </sql>
+
+    <select id="selectCartList" parameterType="com.ruoyi.market.domain.MarketCart" resultMap="MarketCartResult">
+        <include refid="selectMarketCartVo"/>
+        <where>
+            <if test="userId != null"> and c.user_id = #{userId}</if>
+            <if test="productId != null"> and c.product_id = #{productId}</if>
+            <if test="checked != null and checked != ''"> and c.checked = #{checked}</if>
+        </where>
+        order by c.create_time desc
+    </select>
+
+</mapper>

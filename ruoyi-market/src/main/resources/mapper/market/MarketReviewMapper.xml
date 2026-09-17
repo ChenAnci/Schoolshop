@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.market.mapper.MarketReviewMapper">
+
+    <resultMap type="com.ruoyi.market.domain.MarketReview" id="MarketReviewResult">
+        <id     property="reviewId"     column="review_id"     />
+        <result property="orderId"      column="order_id"      />
+        <result property="orderItemId"  column="order_item_id" />
+        <result property="userId"       column="user_id"       />
+        <result property="productId"    column="product_id"    />
+        <result property="shopId"       column="shop_id"       />
+        <result property="rating"       column="rating"        />
+        <result property="content"      column="content"       />
+        <result property="createTime"   column="create_time"   />
+        <result property="userName"     column="user_name"     />
+        <result property="productName"  column="product_name"  />
+    </resultMap>
+
+    <sql id="selectMarketReviewVo">
+        select r.review_id, r.order_id, r.order_item_id, r.user_id, r.product_id, r.shop_id,
+               r.rating, r.content, r.create_time,
+               u.nick_name as user_name,
+               p.product_name
+        from market_review r
+        left join sys_user u on r.user_id = u.user_id
+        left join market_product p on r.product_id = p.product_id
+    </sql>
+
+    <select id="selectProductReviewList" parameterType="com.ruoyi.market.domain.MarketReview" resultMap="MarketReviewResult">
+        <include refid="selectMarketReviewVo"/>
+        <where>
+            <if test="productId != null"> and r.product_id = #{productId}</if>
+            <if test="shopId != null"> and r.shop_id = #{shopId}</if>
+        </where>
+        order by r.create_time desc
+    </select>
+
+</mapper>
