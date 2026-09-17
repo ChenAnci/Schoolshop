@@ -84,6 +84,32 @@ public class TokenService
     }
 
     /**
+     * 根据原始 token 获取用户身份信息（供 WebSocket 握手等非 HTTP-Header 场景使用）
+     *
+     * @param token 去除 "Bearer " 前缀的 JWT 令牌
+     * @return 用户信息，无效返回 null
+     */
+    public LoginUser getLoginUserByToken(String token)
+    {
+        if (StringUtils.isEmpty(token))
+        {
+            return null;
+        }
+        try
+        {
+            Claims claims = parseToken(token);
+            String uuid = (String) claims.get(Constants.LOGIN_USER_KEY);
+            String userKey = getTokenKey(uuid);
+            return redisCache.getCacheObject(userKey);
+        }
+        catch (Exception e)
+        {
+            log.error("根据token获取用户信息异常'{}'", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
      * 设置用户身份信息
      */
     public void setLoginUser(LoginUser loginUser)
