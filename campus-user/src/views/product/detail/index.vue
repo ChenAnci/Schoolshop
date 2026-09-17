@@ -20,6 +20,7 @@
             <span>{{ product.shopName }}</span>
             <el-link type="primary" :underline="false">进入店铺</el-link>
           </div>
+          <el-button v-if="product.shopId" type="primary" plain class="contact-btn" @click="contactShop">联系商家</el-button>
           <div class="detail-desc">{{ product.productDesc || '暂无商品描述' }}</div>
           <div class="detail-actions">
             <span class="qty-label">数量</span>
@@ -156,6 +157,12 @@ async function handleAdd() {
   }
 }
 
+/** 联系商家：跳转消息中心并携带 shopId，由 /chat 页面创建/定位会话 */
+function contactShop() {
+  if (!product.value?.shopId) return
+  router.push({ path: '/chat', query: { shopId: product.value.shopId } })
+}
+
 onMounted(load)
 </script>
 
@@ -236,6 +243,9 @@ onMounted(load)
   font-size: 14px;
   line-height: 1.7;
   margin-bottom: 20px;
+}
+.contact-btn {
+  margin-bottom: 12px;
 }
 .detail-actions {
   display: flex;

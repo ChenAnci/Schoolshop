@@ -69,6 +69,18 @@ export const routes: RouteRecordRaw[] = [
     ]
   },
   {
+    path: '/chat',
+    component: Layout,
+    children: [
+      {
+        path: '',
+        name: 'Chat',
+        component: () => import('@/views/chat/index.vue'),
+        meta: { title: '消息中心', requiresAuth: true }
+      }
+    ]
+  },
+  {
     path: '/me',
     component: Layout,
     children: [

@@ -33,6 +33,13 @@
           <span>购物车</span>
         </router-link>
 
+        <router-link class="cart-link" to="/chat">
+          <el-badge :value="unread" :hidden="unread === 0" :max="99">
+            <el-icon :size="22"><ChatDotRound /></el-icon>
+          </el-badge>
+          <span>消息</span>
+        </router-link>
+
         <template v-if="userStore.token">
           <el-dropdown trigger="click" @command="handleCommand">
             <span class="user-info">
@@ -62,12 +69,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import { Search } from '@element-plus/icons-vue'
+import { Search, ChatDotRound } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { useCartStore } from '@/stores/cart'
+import { getUnreadCount } from '@/api/chat'
+import { connect, on, off } from '@/utils/ws'
 
 const route = useRoute()
 const router = useRouter()
@@ -75,6 +84,7 @@ const userStore = useUserStore()
 const cartStore = useCartStore()
 
 const keyword = ref('')
+const unread = ref(0)
 
 async function loadCartCount() {
   if (!userStore.token || cartStore.loaded) return
@@ -85,7 +95,32 @@ async function loadCartCount() {
   }
 }
 
-onMounted(loadCartCount)
+async function loadUnread() {
+  if (!userStore.token) return
+  try {
+    const r: any = await getUnreadCount()
+    unread.value = r?.data?.count || 0
+  } catch {
+    // 未登录或接口异常时静默忽略
+  }
+}
+
+function onChatMessage() {
+  unread.value++
+}
+
+onMounted(() => {
+  loadCartCount()
+  loadUnread()
+  if (userStore.token) {
+    connect()
+    on('CHAT_MESSAGE', onChatMessage)
+  }
+})
+
+onUnmounted(() => {
+  off('CHAT_MESSAGE', onChatMessage)
+})
 
 const avatarText = computed(() => (userStore.name ? userStore.name.charAt(0) : '用'))
 
