@@ -71,6 +71,18 @@
             <artifactId>mybatis-plus-jsqlparser</artifactId>
         </dependency>
 
+        <!-- WebSocket（聊天/公告推送） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+
+        <!-- 校园市场业务模块（聊天 service/domain） -->
+        <dependency>
+            <groupId>com.ruoyi</groupId>
+            <artifactId>ruoyi-market</artifactId>
+        </dependency>
+
     </dependencies>
 
 </project>
