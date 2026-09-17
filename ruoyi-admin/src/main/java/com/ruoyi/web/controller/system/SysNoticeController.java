@@ -19,6 +19,7 @@ import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.page.TableDataInfo;
 import com.ruoyi.common.core.text.Convert;
 import com.ruoyi.common.enums.BusinessType;
+import com.ruoyi.framework.websocket.WebSocketService;
 import com.ruoyi.system.domain.SysNotice;
 import com.ruoyi.system.service.ISysNoticeReadService;
 import com.ruoyi.system.service.ISysNoticeService;
@@ -37,6 +38,9 @@ public class SysNoticeController extends BaseController
 
     @Autowired
     private ISysNoticeReadService noticeReadService;
+
+    @Autowired
+    private WebSocketService webSocketService;
 
     /**
      * 获取通知公告列表
@@ -68,7 +72,12 @@ public class SysNoticeController extends BaseController
     public AjaxResult add(@Validated @RequestBody SysNotice notice)
     {
         notice.setCreateBy(getUsername());
-        return toAjax(noticeService.insertNotice(notice));
+        int rows = noticeService.insertNotice(notice);
+        if (rows > 0)
+        {
+            webSocketService.broadcastNotice(notice.getNoticeId(), notice.getNoticeTitle());
+        }
+        return toAjax(rows);
     }
 
     /**
