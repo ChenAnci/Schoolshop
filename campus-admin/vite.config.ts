@@ -17,9 +17,16 @@ export default defineConfig({
     proxy: {
       // 开发环境代理到后端，与 RuoYi 前端约定一致
       '/dev-api': {
-        target: 'http://localhost:8080',
+        target: 'http://localhost:8088',
+        ws: true,
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/dev-api/, '')
+      },
+      // WebSocket（聊天/公告推送，与三端保持一致）
+      '/ws': {
+        target: 'ws://localhost:8088',
+        ws: true,
+        changeOrigin: true
       }
     }
   }
