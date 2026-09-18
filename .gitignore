@@ -47,7 +47,7 @@ nbdist/
 toolchain/
 
 # MySQL 数据目录
-mysql-data/
+data/mysql-data/
 
 # Redis 持久化
 dump.rdb
@@ -63,8 +63,8 @@ logs/
 __pycache__/
 *.py[cod]
 
-# Playwright 浏览器缓存（E2E 测试资产保留脚本，不保留浏览器二进制）
-.e2e/.browsers/
+# Playwright 浏览器缓存（测试资产保留脚本，不保留浏览器二进制）
+.browsers/
 .pw-browsers/
 
 # 环境变量（含敏感配置：数据库口令 / 内部 token）
