@@ -45,4 +45,23 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by p.sort
     </select>
 
+    <!-- 原子扣减库存并累加销量：条件更新（CAS），库存不足时影响行数为 0 -->
+    <update id="deductStock">
+        update market_product
+        set stock = stock - #{quantity},
+            sales = ifnull(sales, 0) + #{quantity}
+        where product_id = #{productId}
+          and status = '0'
+          and stock &gt;= #{quantity}
+    </update>
+
+    <!-- 原子回滚库存并回退销量 -->
+    <update id="restoreStock">
+        update market_product
+        set stock = stock + #{quantity},
+            sales = ifnull(sales, 0) - #{quantity}
+        where product_id = #{productId}
+          and sales &gt;= #{quantity}
+    </update>
+
 </mapper>
