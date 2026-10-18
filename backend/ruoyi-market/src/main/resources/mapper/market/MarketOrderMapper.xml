@@ -126,4 +126,26 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
           and status = #{expectedStatus}
     </update>
 
+    <!--
+        进入审查（CAS）：置为审查中并写 audit_flag=1。
+        不设源状态白名单，仅排除「已在审查流程中」的状态（4/5），
+        避免用整对象 updateById 回写覆盖并发仲裁刚完成的状态变更。
+    -->
+    <update id="updateStartAuditByCas">
+        update market_orders
+        set status = #{targetStatus},
+            audit_flag = #{auditFlag},
+            audit_remark = #{auditRemark},
+            update_time = now()
+            <if test="updateBy != null and updateBy != ''">
+                , update_by = #{updateBy}
+            </if>
+        where order_id = #{orderId}
+          and (status is null or status not in
+        <foreach collection="excludedStatuses" item="st" open="(" separator="," close=")">
+            #{st}
+        </foreach>
+        )
+    </update>
+
 </mapper>

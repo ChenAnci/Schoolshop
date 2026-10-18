@@ -358,6 +358,47 @@ class MarketOrderServiceImplTest
         verify(orderMapper, never()).updateCancelByCasInSources(anyLong(), any(), any(), any());
     }
 
+    // ===================== 场景5c：进入审查也走 CAS =====================
+
+    @Test
+    @DisplayName("发起审查：走 CAS 并排除已在审查流程中的状态(4/5)，不整对象回写")
+    void startAudit_shouldUseCas()
+    {
+        when(orderMapper.selectById(1L)).thenReturn(buildOrder(1L, 100L, 10L, "1"));
+        when(orderMapper.updateStartAuditByCas(eq(1L), any(), any(), any(), any(), any())).thenReturn(1);
+
+        assertEquals(1, orderService.startAudit(1L, "买家投诉", "admin"));
+
+        // 必须走 CAS，绝不整对象 updateById 回写
+        verify(orderMapper).updateStartAuditByCas(eq(1L), any(), eq("4"), eq("1"), eq("买家投诉"), eq("admin"));
+        verify(orderMapper, never()).updateById(any(MarketOrder.class));
+
+        ArgumentCaptor<List> captor = ArgumentCaptor.forClass(List.class);
+        verify(orderMapper).updateStartAuditByCas(eq(1L), captor.capture(), any(), any(), any(), any());
+        assertEquals(Arrays.asList("4", "5"), captor.getValue(),
+                "应排除审查中(4)与审查完成(5)，避免重复发起审查");
+    }
+
+    @Test
+    @DisplayName("发起审查：订单已在审查中或审查完成时 CAS 返回 0")
+    void startAudit_shouldReturnZeroWhenAlreadyInAudit()
+    {
+        when(orderMapper.selectById(1L)).thenReturn(buildOrder(1L, 100L, 10L, "4"));
+        when(orderMapper.updateStartAuditByCas(eq(1L), any(), any(), any(), any(), any())).thenReturn(0);
+
+        assertEquals(0, orderService.startAudit(1L, "重复发起", "admin"));
+    }
+
+    @Test
+    @DisplayName("发起审查：订单不存在应抛异常")
+    void startAudit_shouldRejectMissingOrder()
+    {
+        when(orderMapper.selectById(1L)).thenReturn(null);
+
+        assertThrows(ServiceException.class, () -> orderService.startAudit(1L, "原因", "admin"));
+        verify(orderMapper, never()).updateStartAuditByCas(anyLong(), any(), any(), any(), any(), any());
+    }
+
     // ===================== 场景5：管理员可从审查中状态取消 =====================
 
     @Test

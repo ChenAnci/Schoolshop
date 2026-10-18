@@ -13,7 +13,6 @@ import com.ruoyi.common.annotation.Log;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.enums.BusinessType;
-import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.market.domain.MarketOrder;
 import com.ruoyi.market.service.IMarketOrderService;
@@ -38,28 +37,16 @@ public class MarketAdminOrderController extends BaseController
 
     /**
      * 进入审查中（status=4，audit_flag=1）
+     *
+     * 由 Service 以 CAS 完成（排除已在审查流程中的 4/5），
+     * 避免整对象回写覆盖并发仲裁刚完成的状态变更。
      */
     @PreAuthorize("@ss.hasPermi('market:order:edit')")
     @Log(title = "订单审查", businessType = BusinessType.UPDATE)
     @PutMapping("/{orderId}/start-audit")
     public AjaxResult startAudit(@PathVariable Long orderId, @RequestParam(required = false) String reason)
     {
-        MarketOrder order = orderService.getById(orderId);
-        if (order == null)
-        {
-            return error("订单不存在");
-        }
-        String status = order.getStatus() == null ? "" : order.getStatus();
-        if ("4".equals(status) || "5".equals(status))
-        {
-            return error("该订单已进入审查流程，无需重复操作");
-        }
-        order.setStatus("4");
-        order.setAuditFlag("1");
-        order.setAuditRemark(StringUtils.trim(reason));
-        order.setUpdateBy(getUsername());
-        order.setUpdateTime(DateUtils.getNowDate());
-        return toAjax(orderService.updateById(order));
+        return toAjax(orderService.startAudit(orderId, StringUtils.trim(reason), getUsername()));
     }
 
     /**

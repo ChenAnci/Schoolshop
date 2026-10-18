@@ -104,6 +104,18 @@ public interface IMarketOrderService extends IService<MarketOrder>
     public int adminRestoreOrder(Long orderId, String auditRemark, String username);
 
     /**
+     * 管理员发起审查：非「审查中/审查完成」的订单置为审查中(4)，并写 audit_flag=1
+     *
+     * 使用 CAS 条件更新（排除源状态 4/5），避免整对象回写覆盖并发仲裁对状态的变更。
+     *
+     * @param orderId 订单ID
+     * @param reason  审查原因
+     * @param username 当前登录用户名（写入 update_by 供审计）
+     * @return 影响行数，0 表示订单不存在或已进入审查流程
+     */
+    public int startAudit(Long orderId, String reason, String username);
+
+    /**
      * 确认收货（提货）：待自提 → 已完成
      *
      * @param userId   当前登录用户ID

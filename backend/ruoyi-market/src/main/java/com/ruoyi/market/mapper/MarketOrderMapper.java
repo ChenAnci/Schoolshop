@@ -114,4 +114,28 @@ public interface MarketOrderMapper extends BaseMapper<MarketOrder>
             @Param("auditFlag") String auditFlag,
             @Param("auditRemark") String auditRemark,
             @Param("updateBy") String updateBy);
+
+    /**
+     * 进入审查（CAS）：把订单置为审查中(4)并写 audit_flag=1，同时排除指定源状态
+     *
+     * 「进入审查」不对源状态做白名单，只排除「已在审查流程中」的状态（4 审查中、5 审查完成），
+     * 因此这里用 NOT IN 而不是 = expectedStatus。
+     *
+     * 用 CAS 而非整对象 updateById 的原因：整行回写会把读取瞬间的旧状态一起写回，
+     * 并发下会覆盖管理员仲裁或其他路径刚完成的状态变更（例如把已取消订单改回审查中）。
+     *
+     * @param orderId         订单ID
+     * @param excludedStatuses 不允许作为源状态的状态集合（4/5）
+     * @param targetStatus    目标状态（4 审查中）
+     * @param auditFlag       审查标记（1 审查中）
+     * @param auditRemark     审查原因
+     * @param updateBy        操作人，为空时不覆盖
+     * @return 影响行数（0 或 1）
+     */
+    public int updateStartAuditByCas(@Param("orderId") Long orderId,
+            @Param("excludedStatuses") List<String> excludedStatuses,
+            @Param("targetStatus") String targetStatus,
+            @Param("auditFlag") String auditFlag,
+            @Param("auditRemark") String auditRemark,
+            @Param("updateBy") String updateBy);
 }

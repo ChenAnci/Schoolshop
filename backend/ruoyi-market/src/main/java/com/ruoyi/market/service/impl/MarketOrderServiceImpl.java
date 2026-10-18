@@ -53,8 +53,14 @@ public class MarketOrderServiceImpl extends ServiceImpl<MarketOrderMapper, Marke
     /** 订单状态：审查中（管理员仲裁时可从此状态强制取消） */
     private static final String STATUS_AUDITING = "4";
 
+    /** 订单状态：审查完成（已进入过审查流程，不可重复发起审查） */
+    private static final String STATUS_AUDITED = "5";
+
     /** 商品状态：上架 */
     private static final String PRODUCT_ON_SALE = "0";
+
+    /** 审查标记：审查中 */
+    private static final String AUDIT_FLAG_AUDITING = "1";
 
     /** 审查标记：已仲裁（管理员给出最终结论） */
     private static final String AUDIT_FLAG_ARBITRATED = "2";
@@ -296,6 +302,31 @@ public class MarketOrderServiceImpl extends ServiceImpl<MarketOrderMapper, Marke
             }
         }
         return rows;
+    }
+
+    /**
+     * 管理员发起审查：非「审查中/审查完成」的订单置为审查中(4)，并写 audit_flag=1。
+     *
+     * 用 CAS 而非整对象 updateById：整行回写会把读取瞬间的旧状态写回，
+     * 并发下会覆盖仲裁或其他路径刚完成的状态变更（例如把已取消订单改回审查中）。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int startAudit(Long orderId, String reason, String username)
+    {
+        if (orderId == null)
+        {
+            throw new ServiceException("订单ID不能为空");
+        }
+        MarketOrder order = this.getById(orderId);
+        if (order == null)
+        {
+            throw new ServiceException("订单不存在");
+        }
+        // 已在审查流程中的状态直接返回 0（与原逻辑一致，仅行为由 Controller 下沉到 Service）
+        return baseMapper.updateStartAuditByCas(orderId,
+                Arrays.asList(STATUS_AUDITING, STATUS_AUDITED),
+                STATUS_AUDITING, AUDIT_FLAG_AUDITING, reason, username);
     }
 
     /**
