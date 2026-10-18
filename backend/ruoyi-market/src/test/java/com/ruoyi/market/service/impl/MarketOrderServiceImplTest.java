@@ -257,6 +257,7 @@ class MarketOrderServiceImplTest
         when(orderMapper.selectById(1L)).thenReturn(buildOrder(1L, 100L, 10L, "0"));
         when(orderItemChain.list()).thenReturn(Arrays.asList(buildItem(101L, 2)));
         when(orderMapper.updateCancelByCasInSources(eq(1L), any(), eq("3"), eq("admin"))).thenReturn(1);
+        when(orderMapper.updateAuditConclusion(anyLong(), any(), any(), any(), any())).thenReturn(1);
 
         int rows = orderService.adminCancelOrder(1L, "买家投诉属实", "admin");
 
@@ -279,6 +280,84 @@ class MarketOrderServiceImplTest
         verify(orderMapper, never()).updateAuditConclusion(anyLong(), any(), any(), any(), any());
     }
 
+    @Test
+    @DisplayName("管理员仲裁：审查结论写入失败时抛异常，让整个取消事务回滚")
+    void adminCancelOrder_shouldFailWhenAuditWriteMisses()
+    {
+        when(orderMapper.selectById(1L)).thenReturn(buildOrder(1L, 100L, 10L, "0"));
+        when(orderItemChain.list()).thenReturn(Arrays.asList(buildItem(101L, 2)));
+        when(orderMapper.updateCancelByCasInSources(eq(1L), any(), eq("3"), any())).thenReturn(1);
+        // 守卫未命中：订单在取消后被改回其他状态
+        when(orderMapper.updateAuditConclusion(anyLong(), any(), any(), any(), any())).thenReturn(0);
+
+        assertThrows(ServiceException.class,
+                () -> orderService.adminCancelOrder(1L, "结论", "admin"),
+                "结论写不进去必须抛异常回滚，不能静默成功");
+    }
+
+    // ===================== 场景5b：仲裁 complete / restore 同样走 CAS =====================
+
+    @Test
+    @DisplayName("管理员仲裁完成：4→2 走 CAS，并写入完成时间与审查结论")
+    void adminCompleteOrder_shouldUseCas()
+    {
+        when(orderMapper.selectById(1L)).thenReturn(buildOrder(1L, 100L, 10L, "4"));
+        when(orderMapper.updateConfirmByCas(1L, "4", "2", "admin")).thenReturn(1);
+        when(orderMapper.updateAuditConclusion(1L, "2", "2", "同意完成", "admin")).thenReturn(1);
+
+        assertEquals(1, orderService.adminCompleteOrder(1L, "同意完成", "admin"));
+
+        verify(orderMapper).updateConfirmByCas(1L, "4", "2", "admin");
+        verify(orderMapper).updateAuditConclusion(1L, "2", "2", "同意完成", "admin");
+        // 仲裁完成不涉及库存回滚
+        verify(productService, never()).restoreStock(anyLong(), any(Integer.class));
+    }
+
+    @Test
+    @DisplayName("管理员仲裁完成：并发下 CAS 失败返回 0，不写审查结论")
+    void adminCompleteOrder_shouldBeIdempotent()
+    {
+        when(orderMapper.selectById(1L)).thenReturn(buildOrder(1L, 100L, 10L, "4"));
+        when(orderMapper.updateConfirmByCas(1L, "4", "2", "admin")).thenReturn(1, 0);
+        when(orderMapper.updateAuditConclusion(anyLong(), any(), any(), any(), any())).thenReturn(1);
+
+        assertEquals(1, orderService.adminCompleteOrder(1L, "同意", "admin"));
+        assertEquals(0, orderService.adminCompleteOrder(1L, "同意", "admin"), "重复仲裁应返回 0");
+        verify(orderMapper, times(1)).updateAuditConclusion(anyLong(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("管理员仲裁恢复：4→0 走 CAS，不动库存")
+    void adminRestoreOrder_shouldUseCas()
+    {
+        when(orderMapper.selectById(1L)).thenReturn(buildOrder(1L, 100L, 10L, "4"));
+        when(orderMapper.updateStatusByCas(1L, "4", "0", "admin")).thenReturn(1);
+        when(orderMapper.updateAuditConclusion(1L, "0", "2", "恢复流转", "admin")).thenReturn(1);
+
+        assertEquals(1, orderService.adminRestoreOrder(1L, "恢复流转", "admin"));
+
+        verify(orderMapper).updateStatusByCas(1L, "4", "0", "admin");
+        verify(orderMapper).updateAuditConclusion(1L, "0", "2", "恢复流转", "admin");
+        // 恢复流转语义：订单重新走流程，商品仍被该订单占用，不回滚库存
+        verify(productService, never()).restoreStock(anyLong(), any(Integer.class));
+    }
+
+    @Test
+    @DisplayName("管理员仲裁：complete/restore 均不得调用取消专用 CAS")
+    void arbitrateBranches_mustNotWriteCancelTime()
+    {
+        when(orderMapper.selectById(1L)).thenReturn(buildOrder(1L, 100L, 10L, "4"));
+        when(orderMapper.updateStatusByCas(eq(1L), eq("4"), eq("0"), any())).thenReturn(1);
+        when(orderMapper.updateConfirmByCas(eq(1L), eq("4"), eq("2"), any())).thenReturn(1);
+        when(orderMapper.updateAuditConclusion(anyLong(), any(), any(), any(), any())).thenReturn(1);
+
+        orderService.adminRestoreOrder(1L, "恢复", "admin");
+        orderService.adminCompleteOrder(1L, "完成", "admin");
+
+        verify(orderMapper, never()).updateCancelByCas(anyLong(), any(), any(), any());
+        verify(orderMapper, never()).updateCancelByCasInSources(anyLong(), any(), any(), any());
+    }
+
     // ===================== 场景5：管理员可从审查中状态取消 =====================
 
     @Test
@@ -288,6 +367,7 @@ class MarketOrderServiceImplTest
         when(orderMapper.selectById(1L)).thenReturn(buildOrder(1L, 100L, 10L, "4"));
         when(orderItemChain.list()).thenReturn(Arrays.asList(buildItem(101L, 1)));
         when(orderMapper.updateCancelByCasInSources(eq(1L), any(), eq("3"), any())).thenReturn(1);
+        when(orderMapper.updateAuditConclusion(anyLong(), any(), any(), any(), any())).thenReturn(1);
 
         int rows = orderService.adminCancelOrder(1L, "审查结论", "admin");
 

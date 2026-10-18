@@ -229,9 +229,71 @@ public class MarketOrderServiceImpl extends ServiceImpl<MarketOrderMapper, Marke
                 Arrays.asList(STATUS_WAIT_ACCEPT, STATUS_AUDITING), username);
         if (rows > 0)
         {
-            // 同一事务内补写仲裁结论：带状态守卫（此时已取消），失败则整体回滚
-            baseMapper.updateAuditConclusion(orderId, STATUS_CANCELED,
+            // 同一事务内补写仲裁结论：带状态守卫（此时已取消）
+            int auditRows = baseMapper.updateAuditConclusion(orderId, STATUS_CANCELED,
                     AUDIT_FLAG_ARBITRATED, auditRemark, username);
+            if (auditRows <= 0)
+            {
+                // 守卫未命中（订单在取消后又被改回其他状态）：抛异常回滚整个事务，
+                // 避免出现「订单已取消、库存已回滚，但审查结论没落库」且调用方以为成功
+                throw new ServiceException("仲裁结论写入失败，订单状态已变更，请刷新后重试");
+            }
+        }
+        return rows;
+    }
+
+    /**
+     * 管理员仲裁完成：审查中(4) → 已完成(2)，并写入完成时间与审查结论。
+     *
+     * 与 cancel 分支保持同一套一致性模型（CAS + 同事务写结论），
+     * 并发仲裁时只有一个生效，其余返回 0，不会互相覆盖。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int adminCompleteOrder(Long orderId, String auditRemark, String username)
+    {
+        MarketOrder order = this.getById(orderId);
+        if (order == null)
+        {
+            throw new ServiceException("订单不存在");
+        }
+        int rows = baseMapper.updateConfirmByCas(orderId, STATUS_AUDITING, STATUS_FINISHED, username);
+        if (rows > 0)
+        {
+            int auditRows = baseMapper.updateAuditConclusion(orderId, STATUS_FINISHED,
+                    AUDIT_FLAG_ARBITRATED, auditRemark, username);
+            if (auditRows <= 0)
+            {
+                throw new ServiceException("仲裁结论写入失败，订单状态已变更，请刷新后重试");
+            }
+        }
+        return rows;
+    }
+
+    /**
+     * 管理员仲裁恢复：审查中(4) → 待接单(0)，并写入审查结论。
+     *
+     * 恢复流转不动库存（回到待接单只是重新走流程，商品仍为该订单占用），
+     * 与 main 既有语义保持一致。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int adminRestoreOrder(Long orderId, String auditRemark, String username)
+    {
+        MarketOrder order = this.getById(orderId);
+        if (order == null)
+        {
+            throw new ServiceException("订单不存在");
+        }
+        int rows = baseMapper.updateStatusByCas(orderId, STATUS_AUDITING, STATUS_WAIT_ACCEPT, username);
+        if (rows > 0)
+        {
+            int auditRows = baseMapper.updateAuditConclusion(orderId, STATUS_WAIT_ACCEPT,
+                    AUDIT_FLAG_ARBITRATED, auditRemark, username);
+            if (auditRows <= 0)
+            {
+                throw new ServiceException("仲裁结论写入失败，订单状态已变更，请刷新后重试");
+            }
         }
         return rows;
     }

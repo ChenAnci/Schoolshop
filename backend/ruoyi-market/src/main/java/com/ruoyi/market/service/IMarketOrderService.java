@@ -79,6 +79,31 @@ public interface IMarketOrderService extends IService<MarketOrder>
     public int adminCancelOrder(Long orderId, String auditRemark, String username);
 
     /**
+     * 管理员仲裁：强制已完成（仅「审查中」可仲裁）
+     *
+     * 使用 CAS 条件更新（4→2），与 cancel 分支保持一致的一致性模型：
+     * 并发仲裁时只有一个请求生效，其余返回 0，不会互相覆盖状态与审查结论。
+     *
+     * @param orderId     订单ID
+     * @param auditRemark 仲裁意见
+     * @param username    当前登录用户名（写入 update_by 供审计）
+     * @return 影响行数，0 表示状态不符或已被并发处理
+     */
+    public int adminCompleteOrder(Long orderId, String auditRemark, String username);
+
+    /**
+     * 管理员仲裁：恢复流转（仅「审查中」可恢复，回到待商家接单）
+     *
+     * 使用 CAS 条件更新（4→0），语义与其他仲裁分支一致。
+     *
+     * @param orderId     订单ID
+     * @param auditRemark 仲裁意见
+     * @param username    当前登录用户名（写入 update_by 供审计）
+     * @return 影响行数，0 表示状态不符或已被并发处理
+     */
+    public int adminRestoreOrder(Long orderId, String auditRemark, String username);
+
+    /**
      * 确认收货（提货）：待自提 → 已完成
      *
      * @param userId   当前登录用户ID

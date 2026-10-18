@@ -85,30 +85,19 @@ public class MarketAdminOrderController extends BaseController
         {
             return error("请选择仲裁结论");
         }
-        order.setAuditFlag("2");
-        order.setAuditRemark(remark);
-        order.setUpdateBy(getUsername());
-        order.setUpdateTime(DateUtils.getNowDate());
 
-        // cancel 分支需回滚库存并写审查结论，交由 Service 在同一事务内完成（含 CAS 幂等）
-        if ("cancel".equals(action))
-        {
-            return toAjax(orderService.adminCancelOrder(orderId, remark, getUsername()));
-        }
-
+        // 三个仲裁结论统一交由 Service 以 CAS 完成（含同事务写审查结论），
+        // 并发仲裁时只有一个生效，避免整对象 updateById 互相覆盖。
         switch (action)
         {
+            case "cancel":
+                return toAjax(orderService.adminCancelOrder(orderId, remark, getUsername()));
             case "complete":
-                order.setStatus("2");
-                order.setFinishTime(DateUtils.getNowDate());
-                break;
+                return toAjax(orderService.adminCompleteOrder(orderId, remark, getUsername()));
             case "restore":
-                // 恢复流转：回到待商家接单，重新走流程
-                order.setStatus("0");
-                break;
+                return toAjax(orderService.adminRestoreOrder(orderId, remark, getUsername()));
             default:
                 return error("仲裁结论不合法：complete/cancel/restore");
         }
-        return toAjax(orderService.updateById(order));
     }
 }
