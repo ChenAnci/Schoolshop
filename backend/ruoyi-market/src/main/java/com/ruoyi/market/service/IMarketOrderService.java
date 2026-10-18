@@ -36,37 +36,57 @@ public interface IMarketOrderService extends IService<MarketOrder>
     /**
      * 取消订单（用户侧，仅待接单状态可取消），并回滚库存
      *
-     * @param userId  当前登录用户ID
-     * @param orderId 订单ID
+     * @param userId   当前登录用户ID
+     * @param username 当前登录用户名（写入 update_by 供审计）
+     * @param orderId  订单ID
      * @return 影响行数，0 表示状态不符或已被并发处理（幂等，不重复回滚）
      */
-    public int cancelOrder(Long userId, Long orderId);
+    public int cancelOrder(Long userId, String username, Long orderId);
 
     /**
      * 商家拒单（仅待接单状态可拒单），并回滚库存
      *
-     * @param shopId  当前商家店铺ID
-     * @param orderId 订单ID
+     * @param shopId   当前商家店铺ID
+     * @param username 当前登录用户名（写入 update_by 供审计）
+     * @param orderId  订单ID
      * @return 影响行数，0 表示状态不符或已被并发处理
      */
-    public int merchantCancelOrder(Long shopId, Long orderId);
+    public int merchantCancelOrder(Long shopId, String username, Long orderId);
+
+    /**
+     * 商家接单：待接单 → 待自提
+     *
+     * 使用 CAS 条件更新，与取消互斥：若取消已抢先完成（状态已变），接单返回 0，
+     * 避免「取消回滚了库存、接单又把订单改回待自提」导致订单复活而库存偏高。
+     *
+     * @param shopId   当前商家店铺ID
+     * @param username 当前登录用户名（写入 update_by 供审计）
+     * @param orderId  订单ID
+     * @return 影响行数，0 表示状态不符或已被并发处理
+     */
+    public int acceptOrder(Long shopId, String username, Long orderId);
 
     /**
      * 管理员仲裁取消订单，并回滚库存
      *
-     * @param orderId 订单ID
+     * 取消与审查结论（audit_flag/audit_remark）在同一事务内完成，避免订单已取消但结论未落库。
+     *
+     * @param orderId     订单ID
+     * @param auditRemark 仲裁意见
+     * @param username    当前登录用户名（写入 update_by 供审计）
      * @return 影响行数，0 表示状态不符或已被并发处理
      */
-    public int adminCancelOrder(Long orderId);
+    public int adminCancelOrder(Long orderId, String auditRemark, String username);
 
     /**
      * 确认收货（提货）：待自提 → 已完成
      *
-     * @param userId  当前登录用户ID
-     * @param orderId 订单ID
+     * @param userId   当前登录用户ID
+     * @param username 当前登录用户名（写入 update_by 供审计）
+     * @param orderId  订单ID
      * @return 影响行数，0 表示状态不符或已被并发处理
      */
-    public int confirmOrder(Long userId, Long orderId);
+    public int confirmOrder(Long userId, String username, Long orderId);
 
     /**
      * 查询当前用户的订单列表（可按状态筛选）

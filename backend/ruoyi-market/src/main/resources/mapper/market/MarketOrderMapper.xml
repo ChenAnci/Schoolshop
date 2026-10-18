@@ -55,11 +55,18 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by o.create_time desc
     </select>
 
-    <!-- 条件更新状态（CAS）：仅当当前状态为 expectedStatus 时才流转到 targetStatus -->
+    <!--
+        条件更新状态（CAS）：仅当当前状态为 expectedStatus 时才流转到 targetStatus。
+        取消时间与操作人随 CAS 同一条语句写入，避免二次更新（update_by 为空时不覆盖）。
+    -->
     <update id="updateStatusByCas">
         update market_orders
         set status = #{targetStatus},
+            cancel_time = now(),
             update_time = now()
+            <if test="updateBy != null and updateBy != ''">
+                , update_by = #{updateBy}
+            </if>
         where order_id = #{orderId}
           and status = #{expectedStatus}
     </update>
@@ -68,12 +75,41 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <update id="updateStatusByCasInSources">
         update market_orders
         set status = #{targetStatus},
+            cancel_time = now(),
             update_time = now()
+            <if test="updateBy != null and updateBy != ''">
+                , update_by = #{updateBy}
+            </if>
         where order_id = #{orderId}
           and status in
         <foreach collection="expectedStatuses" item="st" open="(" separator="," close=")">
             #{st}
         </foreach>
+    </update>
+
+    <!-- 条件确认收货（CAS）：finish_time 仅在为空时写入，重复提交不覆盖首次完成时间 -->
+    <update id="updateConfirmByCas">
+        update market_orders
+        set status = #{targetStatus},
+            finish_time = ifnull(finish_time, now()),
+            update_time = now()
+            <if test="updateBy != null and updateBy != ''">
+                , update_by = #{updateBy}
+            </if>
+        where order_id = #{orderId}
+          and status = #{expectedStatus}
+    </update>
+
+    <!-- 写入仲裁结论：audit_flag（2 已仲裁）+ audit_remark -->
+    <update id="updateAuditConclusion">
+        update market_orders
+        set audit_flag = #{auditFlag},
+            audit_remark = #{auditRemark},
+            update_time = now()
+            <if test="updateBy != null and updateBy != ''">
+                , update_by = #{updateBy}
+            </if>
+        where order_id = #{orderId}
     </update>
 
 </mapper>

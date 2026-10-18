@@ -206,10 +206,10 @@ class MarketOrderServiceImplTest
         when(orderChain.one()).thenReturn(buildOrder(1L, 100L, 10L, "0"));
         when(orderItemChain.list()).thenReturn(Arrays.asList(buildItem(101L, 2)));
         // 模拟并发：第一个请求抢占成功，第二个请求抢占失败（状态已被改）
-        when(orderMapper.updateStatusByCas(1L, "0", "3")).thenReturn(1, 0);
+        when(orderMapper.updateStatusByCas(1L, "0", "3", "zhangsan")).thenReturn(1, 0);
 
-        int first = orderService.cancelOrder(100L, 1L);
-        int second = orderService.cancelOrder(100L, 1L);
+        int first = orderService.cancelOrder(100L, "zhangsan", 1L);
+        int second = orderService.cancelOrder(100L, "zhangsan", 1L);
 
         assertEquals(1, first, "首次取消应成功");
         assertEquals(0, second, "重复取消应返回 0（幂等）");
@@ -225,9 +225,9 @@ class MarketOrderServiceImplTest
     {
         when(orderChain.one()).thenReturn(buildOrder(1L, 100L, 10L, "0"));
         when(orderItemChain.list()).thenReturn(Arrays.asList(buildItem(101L, 2), buildItem(102L, 1)));
-        when(orderMapper.updateStatusByCas(1L, "0", "3")).thenReturn(1);
+        when(orderMapper.updateStatusByCas(1L, "0", "3", "zhangsan")).thenReturn(1);
 
-        int rows = orderService.cancelOrder(100L, 1L);
+        int rows = orderService.cancelOrder(100L, "zhangsan", 1L);
 
         assertEquals(1, rows);
         verify(productService, times(1)).restoreStock(101L, 2);
@@ -240,26 +240,43 @@ class MarketOrderServiceImplTest
     {
         when(orderChain.one()).thenReturn(buildOrder(1L, 100L, 10L, "0"));
         when(orderItemChain.list()).thenReturn(Arrays.asList(buildItem(101L, 3)));
-        when(orderMapper.updateStatusByCas(1L, "0", "3")).thenReturn(1);
+        when(orderMapper.updateStatusByCas(1L, "0", "3", "shopowner")).thenReturn(1);
 
-        int rows = orderService.merchantCancelOrder(10L, 1L);
+        int rows = orderService.merchantCancelOrder(10L, "shopowner", 1L);
 
         assertEquals(1, rows);
         verify(productService, times(1)).restoreStock(101L, 3);
+        // 商家拒单必须记录操作人（历史行为要求，修复后回归）
+        verify(orderMapper).updateStatusByCas(1L, "0", "3", "shopowner");
     }
 
     @Test
-    @DisplayName("取消订单：管理员仲裁取消应回滚库存")
+    @DisplayName("取消订单：管理员仲裁取消应回滚库存并在同一事务内写入审查结论")
     void adminCancelOrder_shouldRestoreStock()
     {
         when(orderMapper.selectById(1L)).thenReturn(buildOrder(1L, 100L, 10L, "0"));
         when(orderItemChain.list()).thenReturn(Arrays.asList(buildItem(101L, 2)));
-        when(orderMapper.updateStatusByCasInSources(eq(1L), any(), eq("3"))).thenReturn(1);
+        when(orderMapper.updateStatusByCasInSources(eq(1L), any(), eq("3"), eq("admin"))).thenReturn(1);
 
-        int rows = orderService.adminCancelOrder(1L);
+        int rows = orderService.adminCancelOrder(1L, "买家投诉属实", "admin");
 
         assertEquals(1, rows);
         verify(productService, times(1)).restoreStock(101L, 2);
+        // 审查结论由 Service 内部写入（不再由 Controller 二次提交）
+        verify(orderMapper).updateAuditConclusion(1L, "2", "买家投诉属实", "admin");
+    }
+
+    @Test
+    @DisplayName("管理员仲裁：CAS 抢占失败时不写审查结论")
+    void adminCancelOrder_shouldSkipAuditWhenCasFails()
+    {
+        when(orderMapper.selectById(1L)).thenReturn(buildOrder(1L, 100L, 10L, "2"));
+        when(orderMapper.updateStatusByCasInSources(eq(1L), any(), eq("3"), any())).thenReturn(0);
+
+        assertEquals(0, orderService.adminCancelOrder(1L, "结论", "admin"));
+
+        verify(productService, never()).restoreStock(anyLong(), any(Integer.class));
+        verify(orderMapper, never()).updateAuditConclusion(anyLong(), any(), any(), any());
     }
 
     // ===================== 场景5：管理员可从审查中状态取消 =====================
@@ -270,14 +287,14 @@ class MarketOrderServiceImplTest
     {
         when(orderMapper.selectById(1L)).thenReturn(buildOrder(1L, 100L, 10L, "4"));
         when(orderItemChain.list()).thenReturn(Arrays.asList(buildItem(101L, 1)));
-        when(orderMapper.updateStatusByCasInSources(eq(1L), any(), eq("3"))).thenReturn(1);
+        when(orderMapper.updateStatusByCasInSources(eq(1L), any(), eq("3"), any())).thenReturn(1);
 
-        int rows = orderService.adminCancelOrder(1L);
+        int rows = orderService.adminCancelOrder(1L, "审查结论", "admin");
 
         assertEquals(1, rows, "审查中状态应允许管理员强制取消");
 
         ArgumentCaptor<List> captor = ArgumentCaptor.forClass(List.class);
-        verify(orderMapper).updateStatusByCasInSources(eq(1L), captor.capture(), eq("3"));
+        verify(orderMapper).updateStatusByCasInSources(eq(1L), captor.capture(), eq("3"), eq("admin"));
         assertEquals(Arrays.asList("0", "4"), captor.getValue(),
                 "允许的源状态应包含待接单(0)与审查中(4)");
         verify(productService, times(1)).restoreStock(101L, 1);
@@ -292,23 +309,48 @@ class MarketOrderServiceImplTest
         // 模拟「按攻击者 userId 查询不到该订单」
         when(orderChain.one()).thenReturn(null);
 
-        assertThrows(ServiceException.class, () -> orderService.cancelOrder(999L, 1L),
+        assertThrows(ServiceException.class, () -> orderService.cancelOrder(999L, "hacker", 1L),
                 "越权取消应抛异常");
         verify(productService, never()).restoreStock(anyLong(), any(Integer.class));
-        verify(orderMapper, never()).updateStatusByCas(anyLong(), any(), any());
+        verify(orderMapper, never()).updateStatusByCas(anyLong(), any(), any(), any());
     }
 
     // ===================== 场景7：确认收货 =====================
 
     @Test
-    @DisplayName("确认收货：待自提状态可确认，重复确认幂等返回 0")
+    @DisplayName("确认收货：待自提→已完成，重复确认幂等返回 0，并记录操作人")
     void confirmOrder_shouldUseCas()
     {
         when(orderChain.one()).thenReturn(buildOrder(1L, 100L, 10L, "1"));
-        when(orderMapper.updateStatusByCas(1L, "1", "2")).thenReturn(1, 0);
+        when(orderMapper.updateConfirmByCas(1L, "1", "2", "zhangsan")).thenReturn(1, 0);
 
-        assertEquals(1, orderService.confirmOrder(100L, 1L), "首次确认应成功");
-        assertEquals(0, orderService.confirmOrder(100L, 1L), "重复确认应幂等返回 0");
+        assertEquals(1, orderService.confirmOrder(100L, "zhangsan", 1L), "首次确认应成功");
+        assertEquals(0, orderService.confirmOrder(100L, "zhangsan", 1L), "重复确认应幂等返回 0");
+        // 确认收货不应走取消用的 CAS（否则 cancel_time 会被误写）
+        verify(orderMapper, never()).updateStatusByCas(anyLong(), any(), any(), any());
+    }
+
+    // ===================== 场景8：接单与取消互斥 =====================
+
+    @Test
+    @DisplayName("商家接单：走 CAS（0→1），取消已抢先时返回 0，不会复活订单")
+    void acceptOrder_shouldUseCas()
+    {
+        when(orderChain.one()).thenReturn(buildOrder(1L, 100L, 10L, "0"));
+        when(orderMapper.updateStatusByCas(1L, "0", "1", "shopowner")).thenReturn(1, 0);
+
+        assertEquals(1, orderService.acceptOrder(10L, "shopowner", 1L), "待接单状态应可接单");
+        assertEquals(0, orderService.acceptOrder(10L, "shopowner", 1L), "已被取消的订单不可再接单");
+    }
+
+    @Test
+    @DisplayName("商家接单：越权操作其他店铺订单应抛异常")
+    void acceptOrder_shouldRejectOtherShopOrder()
+    {
+        when(orderChain.one()).thenReturn(null);
+
+        assertThrows(ServiceException.class, () -> orderService.acceptOrder(999L, "other", 1L));
+        verify(orderMapper, never()).updateStatusByCas(anyLong(), any(), any(), any());
     }
 
     // ===================== 辅助方法 =====================

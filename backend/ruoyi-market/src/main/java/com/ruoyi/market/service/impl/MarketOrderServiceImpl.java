@@ -56,6 +56,9 @@ public class MarketOrderServiceImpl extends ServiceImpl<MarketOrderMapper, Marke
     /** 商品状态：上架 */
     private static final String PRODUCT_ON_SALE = "0";
 
+    /** 审查标记：已仲裁（管理员给出最终结论） */
+    private static final String AUDIT_FLAG_ARBITRATED = "2";
+
     @Autowired
     private IMarketCartService cartService;
 
@@ -177,11 +180,11 @@ public class MarketOrderServiceImpl extends ServiceImpl<MarketOrderMapper, Marke
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public int cancelOrder(Long userId, Long orderId)
+    public int cancelOrder(Long userId, String username, Long orderId)
     {
         // 归属校验：越权订单直接拒绝
         getOwnOrder(userId, orderId);
-        return cancelOrderInternal(orderId);
+        return cancelOrderInternal(orderId, null, username);
     }
 
     /**
@@ -189,41 +192,61 @@ public class MarketOrderServiceImpl extends ServiceImpl<MarketOrderMapper, Marke
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public int merchantCancelOrder(Long shopId, Long orderId)
+    public int merchantCancelOrder(Long shopId, String username, Long orderId)
     {
         MarketOrder order = getShopOrder(shopId, orderId);
-        return cancelOrderInternal(order.getOrderId());
+        return cancelOrderInternal(order.getOrderId(), null, username);
+    }
+
+    /**
+     * 商家接单：待接单 → 待自提（CAS，与取消互斥）
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int acceptOrder(Long shopId, String username, Long orderId)
+    {
+        MarketOrder order = getShopOrder(shopId, orderId);
+        return baseMapper.updateStatusByCas(order.getOrderId(),
+                STATUS_WAIT_ACCEPT, STATUS_WAIT_TAKE, username);
     }
 
     /**
      * 管理员仲裁取消：可从「待接单/审查中」强制流转到已取消，并回滚库存。
      *
      * 仲裁场景下订单可能已处于 status=4（审查中），故允许的源状态包含 0 与 4。
+     * 审查结论与取消在同一事务内写入，避免「订单已取消但审查结论丢失」。
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public int adminCancelOrder(Long orderId)
+    public int adminCancelOrder(Long orderId, String auditRemark, String username)
     {
         MarketOrder order = this.getById(orderId);
         if (order == null)
         {
             throw new ServiceException("订单不存在");
         }
-        return cancelOrderInternal(orderId, Arrays.asList(STATUS_WAIT_ACCEPT, STATUS_AUDITING));
+        int rows = cancelOrderInternal(orderId,
+                Arrays.asList(STATUS_WAIT_ACCEPT, STATUS_AUDITING), username);
+        if (rows > 0)
+        {
+            // 同一事务内补写仲裁结论：失败则整体回滚，不会出现「取消了但没结论」
+            baseMapper.updateAuditConclusion(orderId, AUDIT_FLAG_ARBITRATED, auditRemark, username);
+        }
+        return rows;
     }
 
     /**
      * 确认收货（提货）：待自提 → 已完成。
      *
-     * 同样使用 CAS 条件更新，避免并发重复提交。
+     * 同样使用 CAS 条件更新，避免并发重复提交；finish_time 由 SQL 层 ifnull 保留首次值。
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public int confirmOrder(Long userId, Long orderId)
+    public int confirmOrder(Long userId, String username, Long orderId)
     {
         // 归属校验：越权订单直接拒绝
         getOwnOrder(userId, orderId);
-        return confirmOrderInternal(orderId);
+        return baseMapper.updateConfirmByCas(orderId, STATUS_WAIT_TAKE, STATUS_FINISHED, username);
     }
 
     // ===================== 状态流转内部实现（三条取消路径共用） =====================
@@ -231,30 +254,22 @@ public class MarketOrderServiceImpl extends ServiceImpl<MarketOrderMapper, Marke
     /**
      * 取消订单内部实现：CAS 抢占状态位成功后才回滚库存。
      *
-     * @return 影响行数，0 表示状态不符或已被并发处理（幂等，不重复回滚）
-     */
-    private int cancelOrderInternal(Long orderId)
-    {
-        return cancelOrderInternal(orderId, null);
-    }
-
-    /**
-     * 取消订单内部实现（可指定允许的源状态）
-     *
      * @param orderId          订单ID
      * @param expectedStatuses 允许的源状态集合，为空表示仅允许「待接单」
-     * @return 影响行数，0 表示状态不符或已被并发处理
+     * @param username         操作人，写入 update_by
+     * @return 影响行数，0 表示状态不符或已被并发处理（幂等，不重复回滚）
      */
-    private int cancelOrderInternal(Long orderId, List<String> expectedStatuses)
+    private int cancelOrderInternal(Long orderId, List<String> expectedStatuses, String username)
     {
         int rows;
         if (expectedStatuses == null || expectedStatuses.isEmpty())
         {
-            rows = baseMapper.updateStatusByCas(orderId, STATUS_WAIT_ACCEPT, STATUS_CANCELED);
+            rows = baseMapper.updateStatusByCas(orderId, STATUS_WAIT_ACCEPT, STATUS_CANCELED, username);
         }
         else
         {
-            rows = baseMapper.updateStatusByCasInSources(orderId, expectedStatuses, STATUS_CANCELED);
+            rows = baseMapper.updateStatusByCasInSources(
+                    orderId, expectedStatuses, STATUS_CANCELED, username);
         }
         if (rows <= 0)
         {
@@ -276,19 +291,7 @@ public class MarketOrderServiceImpl extends ServiceImpl<MarketOrderMapper, Marke
                 }
             }
         }
-
-        MarketOrder update = new MarketOrder();
-        update.setOrderId(orderId);
-        update.setCancelTime(DateUtils.getNowDate());
-        update.setUpdateTime(DateUtils.getNowDate());
-        baseMapper.updateById(update);
         return rows;
-    }
-
-    /** 确认收货内部实现：CAS 抢占状态位 */
-    private int confirmOrderInternal(Long orderId)
-    {
-        return baseMapper.updateStatusByCas(orderId, STATUS_WAIT_TAKE, STATUS_FINISHED);
     }
 
     @Override

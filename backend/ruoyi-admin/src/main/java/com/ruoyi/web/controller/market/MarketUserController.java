@@ -114,9 +114,6 @@ public class MarketUserController extends BaseController
     }
 
     /**
-     * 删除购物车条目
-     */
-    /**
      * 删除购物车条目（不属于当前用户的条目会被静默忽略）
      */
     @DeleteMapping("/cart/{cartIds}")
@@ -212,7 +209,7 @@ public class MarketUserController extends BaseController
     @PutMapping("/order/{orderId}/cancel")
     public AjaxResult orderCancel(@PathVariable Long orderId)
     {
-        return toAjax(orderService.cancelOrder(getUserId(), orderId));
+        return toAjax(orderService.cancelOrder(getUserId(), getUsername(), orderId));
     }
 
     /**
@@ -221,7 +218,7 @@ public class MarketUserController extends BaseController
     @PutMapping("/order/{orderId}/confirm")
     public AjaxResult orderConfirm(@PathVariable Long orderId)
     {
-        return toAjax(orderService.confirmOrder(getUserId(), orderId));
+        return toAjax(orderService.confirmOrder(getUserId(), getUsername(), orderId));
     }
 
     // ===================== 商品评价 =====================

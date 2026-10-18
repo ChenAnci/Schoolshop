@@ -90,22 +90,10 @@ public class MarketAdminOrderController extends BaseController
         order.setUpdateBy(getUsername());
         order.setUpdateTime(DateUtils.getNowDate());
 
-        // cancel 分支需回滚库存，交由 Service 统一处理（含 CAS 幂等）
+        // cancel 分支需回滚库存并写审查结论，交由 Service 在同一事务内完成（含 CAS 幂等）
         if ("cancel".equals(action))
         {
-            int rows = orderService.adminCancelOrder(orderId);
-            // 库存回滚后补写审查结论（audit_flag/remark）
-            if (rows > 0)
-            {
-                MarketOrder audit = new MarketOrder();
-                audit.setOrderId(orderId);
-                audit.setAuditFlag("2");
-                audit.setAuditRemark(remark);
-                audit.setUpdateBy(getUsername());
-                audit.setUpdateTime(DateUtils.getNowDate());
-                orderService.updateById(audit);
-            }
-            return toAjax(rows);
+            return toAjax(orderService.adminCancelOrder(orderId, remark, getUsername()));
         }
 
         switch (action)

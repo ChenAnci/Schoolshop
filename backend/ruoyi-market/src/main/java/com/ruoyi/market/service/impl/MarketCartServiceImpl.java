@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.ruoyi.common.exception.ServiceException;
@@ -124,6 +125,7 @@ public class MarketCartServiceImpl extends ServiceImpl<MarketCartMapper, MarketC
      * 判定为成功，避免把越权过滤暴露成对外错误信息。
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public int removeItems(Long userId, Long[] cartIds)
     {
         if (userId == null || cartIds == null || cartIds.length == 0)
