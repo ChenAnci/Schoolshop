@@ -116,10 +116,14 @@ public class MarketUserController extends BaseController
     /**
      * 删除购物车条目
      */
+    /**
+     * 删除购物车条目（不属于当前用户的条目会被静默忽略）
+     */
     @DeleteMapping("/cart/{cartIds}")
     public AjaxResult cartRemove(@PathVariable Long[] cartIds)
     {
-        return toAjax(cartService.removeItems(getUserId(), cartIds));
+        cartService.removeItems(getUserId(), cartIds);
+        return success();
     }
 
     /**
@@ -199,7 +203,7 @@ public class MarketUserController extends BaseController
     @PostMapping("/order")
     public AjaxResult orderCreate(@RequestBody MarketOrderCreateBo bo)
     {
-        return success(orderService.createOrder(getUserId(), bo));
+        return success(orderService.createOrder(getUserId(), getUsername(), bo));
     }
 
     /**

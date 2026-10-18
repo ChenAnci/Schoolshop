@@ -55,4 +55,25 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by o.create_time desc
     </select>
 
+    <!-- 条件更新状态（CAS）：仅当当前状态为 expectedStatus 时才流转到 targetStatus -->
+    <update id="updateStatusByCas">
+        update market_orders
+        set status = #{targetStatus},
+            update_time = now()
+        where order_id = #{orderId}
+          and status = #{expectedStatus}
+    </update>
+
+    <!-- 条件更新状态（CAS，多源状态）：当前状态属于 expectedStatuses 之一时流转到 targetStatus -->
+    <update id="updateStatusByCasInSources">
+        update market_orders
+        set status = #{targetStatus},
+            update_time = now()
+        where order_id = #{orderId}
+          and status in
+        <foreach collection="expectedStatuses" item="st" open="(" separator="," close=")">
+            #{st}
+        </foreach>
+    </update>
+
 </mapper>

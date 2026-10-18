@@ -32,11 +32,53 @@
         <jwt.version>0.9.1</jwt.version>
         <jaxb-api.version>2.3.1</jaxb-api.version>
         <springdoc.version>3.1.0</springdoc.version>
+        <!-- 测试依赖版本：覆盖 Spring Boot BOM 默认值，与本地仓库可用版本保持一致（离线构建） -->
+        <junit-jupiter.version>5.8.2</junit-jupiter.version>
+        <mockito.version>4.5.1</mockito.version>
+        <byte-buddy.version>1.12.23</byte-buddy.version>
+        <objenesis.version>3.2</objenesis.version>
     </properties>
 
     <!-- 依赖声明 -->
     <dependencyManagement>
         <dependencies>
+
+            <!--
+                测试依赖版本锁定：
+                Spring Boot BOM 默认指向 junit-jupiter 6.0.3 / mockito 5.23.0，
+                本地仓库无对应构件且当前环境为离线构建，故在此显式锁定为仓库中已有的版本。
+                注意：import 型 BOM 的属性无法被项目 properties 覆盖，必须在此处声明。
+            -->
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter</artifactId>
+                <version>${junit-jupiter.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.mockito</groupId>
+                <artifactId>mockito-bom</artifactId>
+                <version>${mockito.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Mockito 传递依赖：锁定为本地仓库已有版本 -->
+            <dependency>
+                <groupId>net.bytebuddy</groupId>
+                <artifactId>byte-buddy</artifactId>
+                <version>${byte-buddy.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.bytebuddy</groupId>
+                <artifactId>byte-buddy-agent</artifactId>
+                <version>${byte-buddy.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.objenesis</groupId>
+                <artifactId>objenesis</artifactId>
+                <version>${objenesis.version}</version>
+            </dependency>
 
             <!-- SpringBoot的依赖配置 -->
             <dependency>

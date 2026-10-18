@@ -60,6 +60,11 @@ public class MarketProductServiceImpl extends ServiceImpl<MarketProductMapper, M
         {
             throw new ServiceException("回滚库存参数不合法");
         }
-        baseMapper.restoreStock(productId, quantity);
+        int rows = baseMapper.restoreStock(productId, quantity);
+        if (rows <= 0)
+        {
+            // 影响行数为 0 说明商品已不存在，属于数据异常，必须让调用方感知并回滚事务
+            throw new ServiceException("回滚库存失败：商品不存在");
+        }
     }
 }

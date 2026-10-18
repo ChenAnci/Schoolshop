@@ -117,6 +117,12 @@ public class MarketCartServiceImpl extends ServiceImpl<MarketCartMapper, MarketC
         return baseMapper.updateById(update);
     }
 
+    /**
+     * 删除当前用户的购物车条目（越权条目自动忽略）
+     *
+     * 返回值语义：删除成功的条目数。调用方（Controller）对「目标均不属于自己」的情况
+     * 判定为成功，避免把越权过滤暴露成对外错误信息。
+     */
     @Override
     public int removeItems(Long userId, Long[] cartIds)
     {

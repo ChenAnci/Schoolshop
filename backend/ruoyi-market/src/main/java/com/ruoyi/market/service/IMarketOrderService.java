@@ -31,23 +31,40 @@ public interface IMarketOrderService extends IService<MarketOrder>
      * @param bo     下单参数
      * @return 生成的订单编号集合（一个店铺一个订单）
      */
-    public List<String> createOrder(Long userId, MarketOrderCreateBo bo);
+    public List<String> createOrder(Long userId, String username, MarketOrderCreateBo bo);
 
     /**
-     * 取消订单（仅待接单状态可取消，并回滚库存）
+     * 取消订单（用户侧，仅待接单状态可取消），并回滚库存
      *
      * @param userId  当前登录用户ID
      * @param orderId 订单ID
-     * @return 影响行数
+     * @return 影响行数，0 表示状态不符或已被并发处理（幂等，不重复回滚）
      */
     public int cancelOrder(Long userId, Long orderId);
+
+    /**
+     * 商家拒单（仅待接单状态可拒单），并回滚库存
+     *
+     * @param shopId  当前商家店铺ID
+     * @param orderId 订单ID
+     * @return 影响行数，0 表示状态不符或已被并发处理
+     */
+    public int merchantCancelOrder(Long shopId, Long orderId);
+
+    /**
+     * 管理员仲裁取消订单，并回滚库存
+     *
+     * @param orderId 订单ID
+     * @return 影响行数，0 表示状态不符或已被并发处理
+     */
+    public int adminCancelOrder(Long orderId);
 
     /**
      * 确认收货（提货）：待自提 → 已完成
      *
      * @param userId  当前登录用户ID
      * @param orderId 订单ID
-     * @return 影响行数
+     * @return 影响行数，0 表示状态不符或已被并发处理
      */
     public int confirmOrder(Long userId, Long orderId);
 

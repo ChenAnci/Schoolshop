@@ -137,6 +137,8 @@ public class MarketShopOrderController extends BaseController
 
     /**
      * 拒单/取消：0待商家接单 → 3已取消
+     *
+     * 与用户取消共用 Service 内的取消逻辑，保证同样会回滚库存且并发重复请求幂等。
      */
     @PreAuthorize("@ss.hasRole('merchant')")
     @PutMapping("/{orderId}/cancel")
@@ -147,19 +149,6 @@ public class MarketShopOrderController extends BaseController
         {
             return error("尚未开通店铺");
         }
-        MarketOrder order = getOwnOrder(orderId, shop.getShopId());
-        if (order == null)
-        {
-            return error("订单不存在");
-        }
-        if (!"0".equals(order.getStatus()))
-        {
-            return error("当前状态不可取消");
-        }
-        order.setStatus("3");
-        order.setCancelTime(DateUtils.getNowDate());
-        order.setUpdateBy(getUsername());
-        order.setUpdateTime(DateUtils.getNowDate());
-        return toAjax(orderService.updateById(order));
+        return toAjax(orderService.merchantCancelOrder(shop.getShopId(), orderId));
     }
 }

@@ -2,6 +2,7 @@ package com.ruoyi.market.service.impl;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -49,6 +50,9 @@ public class MarketOrderServiceImpl extends ServiceImpl<MarketOrderMapper, Marke
     /** 订单状态：已取消 */
     private static final String STATUS_CANCELED = "3";
 
+    /** 订单状态：审查中（管理员仲裁时可从此状态强制取消） */
+    private static final String STATUS_AUDITING = "4";
+
     /** 商品状态：上架 */
     private static final String PRODUCT_ON_SALE = "0";
 
@@ -75,7 +79,7 @@ public class MarketOrderServiceImpl extends ServiceImpl<MarketOrderMapper, Marke
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public List<String> createOrder(Long userId, MarketOrderCreateBo bo)
+    public List<String> createOrder(Long userId, String username, MarketOrderCreateBo bo)
     {
         if (userId == null)
         {
@@ -149,7 +153,7 @@ public class MarketOrderServiceImpl extends ServiceImpl<MarketOrderMapper, Marke
                 total = total.add(cart.getPrice().multiply(BigDecimal.valueOf(cart.getQuantity())));
             }
 
-            MarketOrder order = buildOrder(userId, shopId, total, bo, prefix, seq++, now);
+            MarketOrder order = buildOrder(userId, username, shopId, total, bo, prefix, seq++, now);
             this.save(order);
 
             for (MarketCart cart : shopCarts)
@@ -165,19 +169,100 @@ public class MarketOrderServiceImpl extends ServiceImpl<MarketOrderMapper, Marke
     }
 
     /**
-     * 取消订单（仅待接单状态可取消），并回滚库存。
+     * 取消订单（用户侧，仅待接单状态可取消），并回滚库存。
+     *
+     * 采用「CAS 抢占状态 → 再回滚库存」的顺序：
+     * 先以条件更新占住状态位，影响行数为 0 说明订单不存在、状态不符或已被并发请求处理，
+     * 直接返回 0，保证重复请求不会重复回滚库存。
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int cancelOrder(Long userId, Long orderId)
     {
-        MarketOrder order = getOwnOrder(userId, orderId);
-        if (!STATUS_WAIT_ACCEPT.equals(order.getStatus()))
+        // 归属校验：越权订单直接拒绝
+        getOwnOrder(userId, orderId);
+        return cancelOrderInternal(orderId);
+    }
+
+    /**
+     * 商家拒单：与用户取消共用同一套取消逻辑（含库存回滚 + CAS 幂等）
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int merchantCancelOrder(Long shopId, Long orderId)
+    {
+        MarketOrder order = getShopOrder(shopId, orderId);
+        return cancelOrderInternal(order.getOrderId());
+    }
+
+    /**
+     * 管理员仲裁取消：可从「待接单/审查中」强制流转到已取消，并回滚库存。
+     *
+     * 仲裁场景下订单可能已处于 status=4（审查中），故允许的源状态包含 0 与 4。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int adminCancelOrder(Long orderId)
+    {
+        MarketOrder order = this.getById(orderId);
+        if (order == null)
         {
-            throw new ServiceException("当前状态不可取消");
+            throw new ServiceException("订单不存在");
+        }
+        return cancelOrderInternal(orderId, Arrays.asList(STATUS_WAIT_ACCEPT, STATUS_AUDITING));
+    }
+
+    /**
+     * 确认收货（提货）：待自提 → 已完成。
+     *
+     * 同样使用 CAS 条件更新，避免并发重复提交。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int confirmOrder(Long userId, Long orderId)
+    {
+        // 归属校验：越权订单直接拒绝
+        getOwnOrder(userId, orderId);
+        return confirmOrderInternal(orderId);
+    }
+
+    // ===================== 状态流转内部实现（三条取消路径共用） =====================
+
+    /**
+     * 取消订单内部实现：CAS 抢占状态位成功后才回滚库存。
+     *
+     * @return 影响行数，0 表示状态不符或已被并发处理（幂等，不重复回滚）
+     */
+    private int cancelOrderInternal(Long orderId)
+    {
+        return cancelOrderInternal(orderId, null);
+    }
+
+    /**
+     * 取消订单内部实现（可指定允许的源状态）
+     *
+     * @param orderId          订单ID
+     * @param expectedStatuses 允许的源状态集合，为空表示仅允许「待接单」
+     * @return 影响行数，0 表示状态不符或已被并发处理
+     */
+    private int cancelOrderInternal(Long orderId, List<String> expectedStatuses)
+    {
+        int rows;
+        if (expectedStatuses == null || expectedStatuses.isEmpty())
+        {
+            rows = baseMapper.updateStatusByCas(orderId, STATUS_WAIT_ACCEPT, STATUS_CANCELED);
+        }
+        else
+        {
+            rows = baseMapper.updateStatusByCasInSources(orderId, expectedStatuses, STATUS_CANCELED);
+        }
+        if (rows <= 0)
+        {
+            // 抢占失败：订单不存在、状态不符，或已被并发的取消请求处理
+            return 0;
         }
 
-        // 回滚库存：订单取消后商品重新可售
+        // 抢占成功后才回滚库存，保证「一次状态流转对应一次库存回滚」
         List<MarketOrderItem> items = orderItemService.lambdaQuery()
                 .eq(MarketOrderItem::getOrderId, orderId)
                 .list();
@@ -194,31 +279,16 @@ public class MarketOrderServiceImpl extends ServiceImpl<MarketOrderMapper, Marke
 
         MarketOrder update = new MarketOrder();
         update.setOrderId(orderId);
-        update.setStatus(STATUS_CANCELED);
         update.setCancelTime(DateUtils.getNowDate());
         update.setUpdateTime(DateUtils.getNowDate());
-        return baseMapper.updateById(update);
+        baseMapper.updateById(update);
+        return rows;
     }
 
-    /**
-     * 确认收货（提货）：待自提 → 已完成。
-     */
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public int confirmOrder(Long userId, Long orderId)
+    /** 确认收货内部实现：CAS 抢占状态位 */
+    private int confirmOrderInternal(Long orderId)
     {
-        MarketOrder order = getOwnOrder(userId, orderId);
-        if (!STATUS_WAIT_TAKE.equals(order.getStatus()))
-        {
-            throw new ServiceException("当前状态不可确认收货");
-        }
-
-        MarketOrder update = new MarketOrder();
-        update.setOrderId(orderId);
-        update.setStatus(STATUS_FINISHED);
-        update.setFinishTime(order.getFinishTime() == null ? DateUtils.getNowDate() : order.getFinishTime());
-        update.setUpdateTime(DateUtils.getNowDate());
-        return baseMapper.updateById(update);
+        return baseMapper.updateStatusByCas(orderId, STATUS_WAIT_TAKE, STATUS_FINISHED);
     }
 
     @Override
@@ -254,13 +324,14 @@ public class MarketOrderServiceImpl extends ServiceImpl<MarketOrderMapper, Marke
     // ===================== 私有辅助方法 =====================
 
     /** 构造订单主记录（订单号：毫秒时间戳 + 序号，<= 32 位，满足 order_no 唯一索引长度） */
-    private MarketOrder buildOrder(Long userId, Long shopId, BigDecimal total, MarketOrderCreateBo bo,
-            String prefix, int seq, Date now)
+    private MarketOrder buildOrder(Long userId, String username, Long shopId, BigDecimal total,
+            MarketOrderCreateBo bo, String prefix, int seq, Date now)
     {
         MarketOrder order = new MarketOrder();
         order.setOrderNo(prefix + String.format("%02d", seq));
         order.setUserId(userId);
         order.setShopId(shopId);
+        order.setCreateBy(username == null ? String.valueOf(userId) : username);
         order.setTotalAmount(total);
         order.setPayAmount(total);
         order.setStatus(STATUS_WAIT_ACCEPT);
@@ -292,6 +363,20 @@ public class MarketOrderServiceImpl extends ServiceImpl<MarketOrderMapper, Marke
     private MarketOrder getOwnOrder(Long userId, Long orderId)
     {
         MarketOrder order = getOwnOrderOrNull(userId, orderId);
+        if (order == null)
+        {
+            throw new ServiceException("订单不存在");
+        }
+        return order;
+    }
+
+    /** 校验订单归属当前商家店铺，不匹配抛业务异常 */
+    private MarketOrder getShopOrder(Long shopId, Long orderId)
+    {
+        MarketOrder order = this.lambdaQuery()
+                .eq(MarketOrder::getOrderId, orderId)
+                .eq(MarketOrder::getShopId, shopId)
+                .one();
         if (order == null)
         {
             throw new ServiceException("订单不存在");

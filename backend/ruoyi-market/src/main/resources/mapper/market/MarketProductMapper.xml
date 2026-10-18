@@ -55,13 +55,12 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
           and stock &gt;= #{quantity}
     </update>
 
-    <!-- 原子回滚库存并回退销量 -->
+    <!-- 原子回滚库存并回退销量：仅按商品存在性守卫；sales 用 greatest 兜底避免回退成负数 -->
     <update id="restoreStock">
         update market_product
         set stock = stock + #{quantity},
-            sales = ifnull(sales, 0) - #{quantity}
+            sales = greatest(ifnull(sales, 0) - #{quantity}, 0)
         where product_id = #{productId}
-          and sales &gt;= #{quantity}
     </update>
 
 </mapper>

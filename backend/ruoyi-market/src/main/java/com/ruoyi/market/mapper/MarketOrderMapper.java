@@ -1,6 +1,7 @@
 package com.ruoyi.market.mapper;
 
 import java.util.List;
+import org.apache.ibatis.annotations.Param;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.ruoyi.market.domain.MarketOrder;
 
@@ -18,4 +19,36 @@ public interface MarketOrderMapper extends BaseMapper<MarketOrder>
      * @return 订单集合
      */
     public List<MarketOrder> selectOrderList(MarketOrder order);
+
+    /**
+     * 条件更新订单状态（CAS，用于状态机流转的幂等控制）
+     *
+     * 仅当订单当前状态等于 expectedStatus 时才更新为 targetStatus，
+     * 影响行数为 1 表示流转成功，为 0 表示订单不存在或状态已被其他请求变更。
+     * 这样可避免并发重复请求重复执行库存回滚等副作用。
+     *
+     * @param orderId        订单ID
+     * @param expectedStatus 期望的当前状态
+     * @param targetStatus   目标状态
+     * @return 影响行数（0 或 1）
+     */
+    public int updateStatusByCas(@Param("orderId") Long orderId,
+            @Param("expectedStatus") String expectedStatus,
+            @Param("targetStatus") String targetStatus);
+
+    /**
+     * 条件更新订单状态（CAS，支持多个合法源状态）
+     *
+     * 用于管理员仲裁这类「可从多个状态强制流转到终态」的场景：
+     * 仅当订单当前状态属于 expectedStatuses 之一时才流转，
+     * 影响行数为 1 表示流转成功，为 0 表示状态不符或已被并发处理。
+     *
+     * @param orderId          订单ID
+     * @param expectedStatuses 允许的当前状态集合
+     * @param targetStatus     目标状态
+     * @return 影响行数（0 或 1）
+     */
+    public int updateStatusByCasInSources(@Param("orderId") Long orderId,
+            @Param("expectedStatuses") List<String> expectedStatuses,
+            @Param("targetStatus") String targetStatus);
 }
