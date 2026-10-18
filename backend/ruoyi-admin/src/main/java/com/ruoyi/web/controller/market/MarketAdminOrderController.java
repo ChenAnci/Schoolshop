@@ -46,7 +46,14 @@ public class MarketAdminOrderController extends BaseController
     @PutMapping("/{orderId}/start-audit")
     public AjaxResult startAudit(@PathVariable Long orderId, @RequestParam(required = false) String reason)
     {
-        return toAjax(orderService.startAudit(orderId, StringUtils.trim(reason), getUsername()));
+        int rows = orderService.startAudit(orderId, StringUtils.trim(reason), getUsername());
+        if (rows <= 0)
+        {
+            // CAS 未命中：订单已处于审查中(4)或审查完成(5)（订单存在性已在 Service 校验，
+            // 0 的唯一原因就是已在审查流程中，含并发下被其他管理员抢先发起的情况）
+            return error("该订单已进入审查流程，无需重复操作");
+        }
+        return toAjax(rows);
     }
 
     /**
