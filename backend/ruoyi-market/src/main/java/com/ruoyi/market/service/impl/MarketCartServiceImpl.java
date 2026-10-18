@@ -123,6 +123,9 @@ public class MarketCartServiceImpl extends ServiceImpl<MarketCartMapper, MarketC
      *
      * 返回值语义：删除成功的条目数。调用方（Controller）对「目标均不属于自己」的情况
      * 判定为成功，避免把越权过滤暴露成对外错误信息。
+     *
+     * 事务说明：当前实现用 deleteBatchIds 一次性删除（单条 SQL，本身原子），事务并非必需；
+     * 保留是为了后续若改为逐条删除时仍能保证「要么全删要么全不删」。
      */
     @Override
     @Transactional(rollbackFor = Exception.class)

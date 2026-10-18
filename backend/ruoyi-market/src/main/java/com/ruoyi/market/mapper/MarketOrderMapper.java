@@ -8,6 +8,12 @@ import com.ruoyi.market.domain.MarketOrder;
 /**
  * 订单 数据层
  *
+ * 状态流转相关的更新一律使用条件更新（CAS），影响行数为 0 即代表状态不符或已被并发处理，
+ * 调用方据此判断是否执行库存回滚等副作用，避免重复执行。
+ *
+ * 注意：不同流转会写不同的业务时间字段（取消写 cancel_time、确认写 finish_time），
+ * 故按流转类型拆分方法，禁止用一个通用 CAS 同时服务多种流转。
+ *
  * @author ruoyi
  */
 public interface MarketOrderMapper extends BaseMapper<MarketOrder>
@@ -21,13 +27,13 @@ public interface MarketOrderMapper extends BaseMapper<MarketOrder>
     public List<MarketOrder> selectOrderList(MarketOrder order);
 
     /**
-     * 条件更新订单状态（CAS，用于状态机流转的幂等控制）
+     * 条件更新订单状态（CAS，通用，不写任何业务时间字段）
      *
      * 仅当订单当前状态等于 expectedStatus 时才更新为 targetStatus，
      * 影响行数为 1 表示流转成功，为 0 表示订单不存在或状态已被其他请求变更。
-     * 这样可避免并发重复请求重复执行库存回滚等副作用。
      *
-     * 同时记录操作人（update_by）与取消时间，便于审计与追溯。
+     * 用于「接单」这类只改状态、不需要额外业务时间的流转。
+     * 取消请使用 {@link #updateCancelByCas}，确认收货请使用 {@link #updateConfirmByCas}。
      *
      * @param orderId        订单ID
      * @param expectedStatus 期望的当前状态
@@ -41,13 +47,26 @@ public interface MarketOrderMapper extends BaseMapper<MarketOrder>
             @Param("updateBy") String updateBy);
 
     /**
-     * 条件更新订单状态（CAS，支持多个合法源状态）
+     * 条件取消订单（CAS）：同时写入 cancel_time
      *
-     * 用于管理员仲裁这类「可从多个状态强制流转到终态」的场景：
-     * 仅当订单当前状态属于 expectedStatuses 之一时才流转，
-     * 影响行数为 1 表示流转成功，为 0 表示状态不符或已被并发处理。
+     * 仅取消流转会写 cancel_time，接单/确认等其他流转不得复用本方法，
+     * 否则会在未取消的订单上留下取消时间。
      *
-     * 同时记录操作人（update_by）与取消时间，便于审计与追溯。
+     * @param orderId        订单ID
+     * @param expectedStatus 期望的当前状态
+     * @param targetStatus   目标状态
+     * @param updateBy       操作人，为空时不覆盖
+     * @return 影响行数（0 或 1）
+     */
+    public int updateCancelByCas(@Param("orderId") Long orderId,
+            @Param("expectedStatus") String expectedStatus,
+            @Param("targetStatus") String targetStatus,
+            @Param("updateBy") String updateBy);
+
+    /**
+     * 条件取消订单（CAS，支持多个合法源状态）：同时写入 cancel_time
+     *
+     * 用于管理员仲裁这类「可从多个状态强制取消」的场景。
      *
      * @param orderId          订单ID
      * @param expectedStatuses 允许的当前状态集合
@@ -55,15 +74,15 @@ public interface MarketOrderMapper extends BaseMapper<MarketOrder>
      * @param updateBy         操作人，为空时不覆盖
      * @return 影响行数（0 或 1）
      */
-    public int updateStatusByCasInSources(@Param("orderId") Long orderId,
+    public int updateCancelByCasInSources(@Param("orderId") Long orderId,
             @Param("expectedStatuses") List<String> expectedStatuses,
             @Param("targetStatus") String targetStatus,
             @Param("updateBy") String updateBy);
 
     /**
-     * 条件确认收货（CAS）：待自提 → 已完成
+     * 条件确认收货（CAS）：待自提 → 已完成，同时写入 finish_time
      *
-     * 完成时间 finish_time 用 ifnull 保留首次写入值，语义对齐原实现「若为空则写入 now()」：
+     * 完成时间用 ifnull 保留首次写入值，语义对齐原实现「若为空则写入 now()」：
      * 既保证确认后一定有完成时间，也避免重复提交刷掉首次完成时间。
      *
      * @param orderId        订单ID
@@ -80,13 +99,18 @@ public interface MarketOrderMapper extends BaseMapper<MarketOrder>
     /**
      * 更新订单审查结论（仲裁成功后写入 audit_flag / audit_remark）
      *
-     * @param orderId     订单ID
-     * @param auditFlag   审查标记（2 已仲裁）
-     * @param auditRemark 审查意见
-     * @param updateBy    操作人
+     * 带状态守卫：仅当订单确实处于 expectedStatus 时才写入，
+     * 防止被复用到其他场景时把「未审查」订单直接标成「已仲裁」。
+     *
+     * @param orderId        订单ID
+     * @param expectedStatus 期望的当前状态（仲裁取消后应为已取消 3）
+     * @param auditFlag      审查标记（2 已仲裁）
+     * @param auditRemark    审查意见
+     * @param updateBy       操作人
      * @return 影响行数（0 或 1）
      */
     public int updateAuditConclusion(@Param("orderId") Long orderId,
+            @Param("expectedStatus") String expectedStatus,
             @Param("auditFlag") String auditFlag,
             @Param("auditRemark") String auditRemark,
             @Param("updateBy") String updateBy);

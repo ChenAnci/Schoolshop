@@ -229,8 +229,9 @@ public class MarketOrderServiceImpl extends ServiceImpl<MarketOrderMapper, Marke
                 Arrays.asList(STATUS_WAIT_ACCEPT, STATUS_AUDITING), username);
         if (rows > 0)
         {
-            // 同一事务内补写仲裁结论：失败则整体回滚，不会出现「取消了但没结论」
-            baseMapper.updateAuditConclusion(orderId, AUDIT_FLAG_ARBITRATED, auditRemark, username);
+            // 同一事务内补写仲裁结论：带状态守卫（此时已取消），失败则整体回滚
+            baseMapper.updateAuditConclusion(orderId, STATUS_CANCELED,
+                    AUDIT_FLAG_ARBITRATED, auditRemark, username);
         }
         return rows;
     }
@@ -264,11 +265,11 @@ public class MarketOrderServiceImpl extends ServiceImpl<MarketOrderMapper, Marke
         int rows;
         if (expectedStatuses == null || expectedStatuses.isEmpty())
         {
-            rows = baseMapper.updateStatusByCas(orderId, STATUS_WAIT_ACCEPT, STATUS_CANCELED, username);
+            rows = baseMapper.updateCancelByCas(orderId, STATUS_WAIT_ACCEPT, STATUS_CANCELED, username);
         }
         else
         {
-            rows = baseMapper.updateStatusByCasInSources(
+            rows = baseMapper.updateCancelByCasInSources(
                     orderId, expectedStatuses, STATUS_CANCELED, username);
         }
         if (rows <= 0)
