@@ -13,7 +13,6 @@ import com.ruoyi.common.annotation.Log;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.enums.BusinessType;
-import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.market.domain.MarketOrder;
 import com.ruoyi.market.service.IMarketOrderService;
@@ -38,28 +37,23 @@ public class MarketAdminOrderController extends BaseController
 
     /**
      * 进入审查中（status=4，audit_flag=1）
+     *
+     * 由 Service 以 CAS 完成（排除已在审查流程中的 4/5），
+     * 避免整对象回写覆盖并发仲裁刚完成的状态变更。
      */
     @PreAuthorize("@ss.hasPermi('market:order:edit')")
     @Log(title = "订单审查", businessType = BusinessType.UPDATE)
     @PutMapping("/{orderId}/start-audit")
     public AjaxResult startAudit(@PathVariable Long orderId, @RequestParam(required = false) String reason)
     {
-        MarketOrder order = orderService.getById(orderId);
-        if (order == null)
+        int rows = orderService.startAudit(orderId, StringUtils.trim(reason), getUsername());
+        if (rows <= 0)
         {
-            return error("订单不存在");
-        }
-        String status = order.getStatus() == null ? "" : order.getStatus();
-        if ("4".equals(status) || "5".equals(status))
-        {
+            // CAS 未命中：订单已处于审查中(4)或审查完成(5)（订单存在性已在 Service 校验，
+            // 0 的唯一原因就是已在审查流程中，含并发下被其他管理员抢先发起的情况）
             return error("该订单已进入审查流程，无需重复操作");
         }
-        order.setStatus("4");
-        order.setAuditFlag("1");
-        order.setAuditRemark(StringUtils.trim(reason));
-        order.setUpdateBy(getUsername());
-        order.setUpdateTime(DateUtils.getNowDate());
-        return toAjax(orderService.updateById(order));
+        return toAjax(rows);
     }
 
     /**
@@ -85,27 +79,19 @@ public class MarketAdminOrderController extends BaseController
         {
             return error("请选择仲裁结论");
         }
-        order.setAuditFlag("2");
-        order.setAuditRemark(remark);
-        order.setUpdateBy(getUsername());
-        order.setUpdateTime(DateUtils.getNowDate());
+
+        // 三个仲裁结论统一交由 Service 以 CAS 完成（含同事务写审查结论），
+        // 并发仲裁时只有一个生效，避免整对象 updateById 互相覆盖。
         switch (action)
         {
-            case "complete":
-                order.setStatus("2");
-                order.setFinishTime(DateUtils.getNowDate());
-                break;
             case "cancel":
-                order.setStatus("3");
-                order.setCancelTime(DateUtils.getNowDate());
-                break;
+                return toAjax(orderService.adminCancelOrder(orderId, remark, getUsername()));
+            case "complete":
+                return toAjax(orderService.adminCompleteOrder(orderId, remark, getUsername()));
             case "restore":
-                // 恢复流转：回到待商家接单，重新走流程
-                order.setStatus("0");
-                break;
+                return toAjax(orderService.adminRestoreOrder(orderId, remark, getUsername()));
             default:
                 return error("仲裁结论不合法：complete/cancel/restore");
         }
-        return toAjax(orderService.updateById(order));
     }
 }

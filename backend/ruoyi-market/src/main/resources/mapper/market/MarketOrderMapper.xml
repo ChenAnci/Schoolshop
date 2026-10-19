@@ -55,4 +55,97 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by o.create_time desc
     </select>
 
+    <!--
+        条件更新状态（CAS，通用）：只改状态，不写任何业务时间字段。
+        用于「接单」这类不需要额外业务时间的流转——切勿在此加 cancel_time/finish_time，
+        否则接单会把取消时间一并写上。取消用 updateCancelByCas，确认用 updateConfirmByCas。
+    -->
+    <update id="updateStatusByCas">
+        update market_orders
+        set status = #{targetStatus},
+            update_time = now()
+            <if test="updateBy != null and updateBy != ''">
+                , update_by = #{updateBy}
+            </if>
+        where order_id = #{orderId}
+          and status = #{expectedStatus}
+    </update>
+
+    <!-- 条件取消（CAS）：仅取消流转写 cancel_time -->
+    <update id="updateCancelByCas">
+        update market_orders
+        set status = #{targetStatus},
+            cancel_time = now(),
+            update_time = now()
+            <if test="updateBy != null and updateBy != ''">
+                , update_by = #{updateBy}
+            </if>
+        where order_id = #{orderId}
+          and status = #{expectedStatus}
+    </update>
+
+    <!-- 条件取消（CAS，多源状态）：当前状态属于 expectedStatuses 之一时才取消 -->
+    <update id="updateCancelByCasInSources">
+        update market_orders
+        set status = #{targetStatus},
+            cancel_time = now(),
+            update_time = now()
+            <if test="updateBy != null and updateBy != ''">
+                , update_by = #{updateBy}
+            </if>
+        where order_id = #{orderId}
+          and status in
+        <foreach collection="expectedStatuses" item="st" open="(" separator="," close=")">
+            #{st}
+        </foreach>
+    </update>
+
+    <!-- 条件确认收货（CAS）：finish_time 仅在为空时写入，重复提交不覆盖首次完成时间 -->
+    <update id="updateConfirmByCas">
+        update market_orders
+        set status = #{targetStatus},
+            finish_time = ifnull(finish_time, now()),
+            update_time = now()
+            <if test="updateBy != null and updateBy != ''">
+                , update_by = #{updateBy}
+            </if>
+        where order_id = #{orderId}
+          and status = #{expectedStatus}
+    </update>
+
+    <!-- 写入仲裁结论：带状态守卫，仅当前状态符合时才写 audit_flag / audit_remark -->
+    <update id="updateAuditConclusion">
+        update market_orders
+        set audit_flag = #{auditFlag},
+            audit_remark = #{auditRemark},
+            update_time = now()
+            <if test="updateBy != null and updateBy != ''">
+                , update_by = #{updateBy}
+            </if>
+        where order_id = #{orderId}
+          and status = #{expectedStatus}
+    </update>
+
+    <!--
+        进入审查（CAS）：置为审查中并写 audit_flag=1。
+        不设源状态白名单，仅排除「已在审查流程中」的状态（4/5），
+        避免用整对象 updateById 回写覆盖并发仲裁刚完成的状态变更。
+    -->
+    <update id="updateStartAuditByCas">
+        update market_orders
+        set status = #{targetStatus},
+            audit_flag = #{auditFlag},
+            audit_remark = #{auditRemark},
+            update_time = now()
+            <if test="updateBy != null and updateBy != ''">
+                , update_by = #{updateBy}
+            </if>
+        where order_id = #{orderId}
+          and (status is null or status not in
+        <foreach collection="excludedStatuses" item="st" open="(" separator="," close=")">
+            #{st}
+        </foreach>
+        )
+    </update>
+
 </mapper>

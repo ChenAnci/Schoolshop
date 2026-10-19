@@ -18,4 +18,20 @@ public interface IMarketProductService extends IService<MarketProduct>
      * @return 商品信息集合
      */
     public List<MarketProduct> selectProductList(MarketProduct product);
+
+    /**
+     * 扣减库存（原子 CAS，库存不足时抛业务异常）
+     *
+     * @param productId 商品ID
+     * @param quantity  扣减数量
+     */
+    public void deductStock(Long productId, Integer quantity);
+
+    /**
+     * 回滚库存（订单取消/超时关闭时调用）
+     *
+     * @param productId 商品ID
+     * @param quantity  回滚数量
+     */
+    public void restoreStock(Long productId, Integer quantity);
 }

@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.page.TableDataInfo;
-import com.ruoyi.common.utils.DateUtils;
 import com.ruoyi.market.domain.MarketOrder;
 import com.ruoyi.market.domain.MarketOrderItem;
 import com.ruoyi.market.domain.MarketShop;
@@ -110,6 +109,8 @@ public class MarketShopOrderController extends BaseController
 
     /**
      * 接单：0待商家接单 → 1待自提
+     *
+     * 由 Service 以 CAS 完成流转：与取消互斥，避免取消已回滚库存后订单又被改回待自提。
      */
     @PreAuthorize("@ss.hasRole('merchant')")
     @PutMapping("/{orderId}/accept")
@@ -120,23 +121,13 @@ public class MarketShopOrderController extends BaseController
         {
             return error("尚未开通店铺");
         }
-        MarketOrder order = getOwnOrder(orderId, shop.getShopId());
-        if (order == null)
-        {
-            return error("订单不存在");
-        }
-        if (!"0".equals(order.getStatus()))
-        {
-            return error("当前状态不可接单");
-        }
-        order.setStatus("1");
-        order.setUpdateBy(getUsername());
-        order.setUpdateTime(DateUtils.getNowDate());
-        return toAjax(orderService.updateById(order));
+        return toAjax(orderService.acceptOrder(shop.getShopId(), getUsername(), orderId));
     }
 
     /**
      * 拒单/取消：0待商家接单 → 3已取消
+     *
+     * 与用户取消共用 Service 内的取消逻辑，保证同样会回滚库存且并发重复请求幂等。
      */
     @PreAuthorize("@ss.hasRole('merchant')")
     @PutMapping("/{orderId}/cancel")
@@ -147,19 +138,6 @@ public class MarketShopOrderController extends BaseController
         {
             return error("尚未开通店铺");
         }
-        MarketOrder order = getOwnOrder(orderId, shop.getShopId());
-        if (order == null)
-        {
-            return error("订单不存在");
-        }
-        if (!"0".equals(order.getStatus()))
-        {
-            return error("当前状态不可取消");
-        }
-        order.setStatus("3");
-        order.setCancelTime(DateUtils.getNowDate());
-        order.setUpdateBy(getUsername());
-        order.setUpdateTime(DateUtils.getNowDate());
-        return toAjax(orderService.updateById(order));
+        return toAjax(orderService.merchantCancelOrder(shop.getShopId(), getUsername(), orderId));
     }
 }
